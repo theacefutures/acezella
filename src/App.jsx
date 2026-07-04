@@ -2686,7 +2686,7 @@ function MyNotes({ state, dispatch }) {
     <div className="fade-in" style={{ height: "100%", overflowY: "auto", padding: 28, display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ textAlign: "center" }}>
         <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: -1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: C.accent }}>♤ My Notes</h1>
-        <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 4 }}>"For as a man thinks in his heart, so is he"</div>
+        <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 4 }}> Journal Yourself</div>
       </div>
 
       <div style={{ display: "flex", gap: 8, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 6, maxWidth: 640, margin: "0 auto", width: "100%" }}>
