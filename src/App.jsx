@@ -499,7 +499,7 @@ function defaultState() {
   return {
     users: [{ id: "u1", email: "demo@acezella.io", password: "demo123", name: "Ace Trader" }],
     currentUser: null, modal: null, activeAccount: "all",
-    trades: genDemoData(),
+    trades: [],
     accounts: [
       { id: "acc1", name: "ACEZELLA", type: "Funded", color: C.accent },
     ],
