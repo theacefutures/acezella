@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import { loadCloudState, saveCloudState } from "./lib/cloudSync";
 
@@ -6280,6 +6280,35 @@ function PrivacyGuard({ state, dispatch, children }) {
 }
 
 // ─── ROOT APP ────────────────────────────────────────────────────────────────
+// ─── PAGE ERROR BOUNDARY ──────────────────────────────────────────────────────
+// Without this, any uncaught error thrown while rendering a page (bad data
+// shape, a null field, etc.) unmounts the entire React tree and leaves a
+// blank white screen with no clue why. This catches it, logs the full error
+// to the browser console, and shows the message + a "Try Again" button in
+// place of just that page — the header/sidebar stay usable.
+class PageErrorBoundary extends React.Component {
+  constructor(props) { super(props); this.state = { error: null }; }
+  static getDerivedStateFromError(error) { return { error }; }
+  componentDidCatch(error, info) { console.error("Page render error:", error, info?.componentStack); }
+  render() {
+    if (this.state.error) {
+      return (
+        <div style={{ padding: 28, height: "100%", overflowY: "auto" }}>
+          <div style={{ background: C.redDim, border: `1px solid ${C.red}44`, borderRadius: 14, padding: 24, maxWidth: 760 }}>
+            <div style={{ fontWeight: 800, fontSize: 17, color: C.red, marginBottom: 10 }}>⚠ Something went wrong loading this page</div>
+            <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 6 }}>Open your browser's DevTools Console (F12) for the full stack trace. Error message:</div>
+            <div style={{ fontSize: 12.5, color: C.text, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: 12, marginBottom: 16, fontFamily: "monospace", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+              {String(this.state.error?.message || this.state.error)}
+            </div>
+            <button onClick={() => this.setState({ error: null })} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 8, padding: "9px 18px", fontWeight: 700, cursor: "pointer", fontSize: 13 }}>Try Again</button>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   const [state, setRawState] = useState(() => initState());
   const [page, setPage] = useState("dashboard");
@@ -6419,7 +6448,9 @@ export default function App() {
               <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}><span>{currentNav?.icon}</span>{currentNav?.label}</div>
               <button onClick={() => openAddTrade(state, dispatch)} style={{ background: C.accent, border: "none", color: "#000", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>+ Trade</button>
             </div>
-            <div style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>{pages[page]}</div>
+            <div style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
+              <PageErrorBoundary key={page}>{pages[page]}</PageErrorBoundary>
+            </div>
           </div>
           {modalType === "welcome" && <WelcomeModal state={state} dispatch={dispatch} />}
           {modalType === "add_trade" && <AddTradeModal state={state} dispatch={dispatch} />}
