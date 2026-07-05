@@ -1003,7 +1003,7 @@ function AuthScreen({ state, dispatch }) {
           </div>
           <Btn variant="ghost" onClick={() => { setMode(m => m === "login" ? "register" : "login"); setError(""); }} style={{ width: "100%", justifyContent: "center" }}>{mode === "login" ? "Need an account? Sign up" : "Already have an account? Sign in"}</Btn>
         </Card>
-        <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: C.textDim }}>Contact Support: acezella.journal@gmail.com.</div>
+        <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: C.textDim }}>Contact Support: acezella.journal@gmail.com </div>
       </div>
     </div>
   );
