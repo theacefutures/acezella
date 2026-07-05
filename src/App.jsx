@@ -176,7 +176,7 @@ const ACCOUNT_COLORS = [C.accent, C.yellow, C.blue, "#ff8844", "#cc44ff", "#44cc
 const PLAN_NAME = { free: "Ace Basic", plus: "AcePlus" };
 const FREE_LIMITS = { maxTrades: 40, maxAccounts: 1, maxSetups: 4, maxScreenshots: 1 };
 const PLUS_ONLY_PAGES = { mynotes: "My Notes", analytics: "Analytics", emotions: "Edge Score", finances: "Prop Firms", livecapital: "Live Capital", myrecord: "My Record" };
-const PLUS_ONLY_THEMES = ["TradeSet"]; // themes available on Ace Basic; everything else is AcePlus
+const PLUS_ONLY_THEMES = ["TradeSet", "Original"]; // themes available on Ace Basic; everything else is AcePlus
 // ── PROMO MODE ──────────────────────────────────────────────────────────────
 // All AcePlus-gated features are temporarily unlocked for every user while we
 // run a free promo. To restore normal paywalling later, just flip this flag
@@ -535,9 +535,9 @@ function defaultState() {
     ],
     siteName: "ACEZELLA",
     plan: "free", // "free" (Ace Basic) | "plus" (AcePlus $10/mo)
-    theme: { name: "TradeSet", mode: "night" },
+    theme: { name: "Original", mode: "night" },
     themeSchemaVersion: THEME_SCHEMA_VERSION,
-    uiTransparency: 0,
+    uiTransparency: 90,
     popupTransparency: 0,
     watermark: { dataUrl: null, opacity: 20 },
     privacy: { enabled: false, blurOnBlur: true, disableRightClick: true, disableCopy: true, watermarkOverlay: true, blockPrint: true },
@@ -1003,7 +1003,7 @@ function AuthScreen({ state, dispatch }) {
           </div>
           <Btn variant="ghost" onClick={() => { setMode(m => m === "login" ? "register" : "login"); setError(""); }} style={{ width: "100%", justifyContent: "center" }}>{mode === "login" ? "Need an account? Sign up" : "Already have an account? Sign in"}</Btn>
         </Card>
-        <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: C.textDim }}>Contact Support: acezella.journal@gmail.com </div>
+        <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: C.textDim }}>Contact Support: acezella.journal@gmail.com.</div>
       </div>
     </div>
   );
@@ -2686,7 +2686,7 @@ function MyNotes({ state, dispatch }) {
     <div className="fade-in" style={{ height: "100%", overflowY: "auto", padding: 28, display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ textAlign: "center" }}>
         <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: -1, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, color: C.accent }}>♤ My Notes</h1>
-        <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 4 }}> Journal Yourself</div>
+        <div style={{ fontSize: 13, color: C.textMuted, fontStyle: "italic", marginTop: 4 }}>"For as a man thinks in his heart, so is he"</div>
       </div>
 
       <div style={{ display: "flex", gap: 8, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 12, padding: 6, maxWidth: 640, margin: "0 auto", width: "100%" }}>
