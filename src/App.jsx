@@ -451,6 +451,33 @@ const STORAGE_KEY = "acezella_v3";
 function loadData() { try { const r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : null; } catch { return null; } }
 function saveData(d) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(d)); } catch {} }
 
+// ─── SHARE LINKS (stored server-side so the URL stays short) ────────────────
+function shortId(len = 8) {
+  const chars = "abcdefghijkmnopqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  let out = "";
+  for (let i = 0; i < len; i++) out += chars[Math.floor(Math.random() * chars.length)];
+  return out;
+}
+
+async function createShareLink(trade) {
+  const shareData = {
+    id: trade.id, symbol: trade.symbol, direction: trade.direction, date: trade.date,
+    entry: trade.entry, exit: trade.exit, size: trade.size, pnl: trade.pnl, pips: trade.pips,
+    outcome: trade.outcome, setup: trade.setup, session: trade.session, mood: trade.mood,
+    notes: trade.notes, screenshots: trade.screenshots,
+  };
+  const id = shortId();
+  const { error } = await supabase.from("shared_trades").insert({ id, data: shareData });
+  if (error) throw error;
+  return `${window.location.origin}${window.location.pathname}#share=${id}`;
+}
+
+async function fetchSharedTrade(id) {
+  const { data, error } = await supabase.from("shared_trades").select("data").eq("id", id).single();
+  if (error) return null;
+  return data.data;
+}
+
 function genDemoData() {
   const symbols = ["NQ", "ES", "GC", "CL", "MNQ", "MES"];
   const setups = ["Celery", "Breakout", "Onion", "Fade", "Inverted Celery"];
@@ -1599,16 +1626,11 @@ function AddTradeModal({ state, dispatch }) {
 
 // ─── SHARE MODAL ─────────────────────────────────────────────────────────────
 function ShareModal({ trade, dispatch }) {
-  const shareData = {
-    id: trade.id, symbol: trade.symbol, direction: trade.direction, date: trade.date,
-    entry: trade.entry, exit: trade.exit, size: trade.size, pnl: trade.pnl, pips: trade.pips,
-    outcome: trade.outcome, setup: trade.setup, session: trade.session, mood: trade.mood,
-    notes: trade.notes, screenshots: trade.screenshots,
-  };
-  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(shareData))));
-  const link = `${window.location.origin}${window.location.pathname}#share=${encoded}`;
+  const [link, setLink] = useState(null);
+  const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
-  const copy = () => { navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); };
+  useEffect(() => { createShareLink(trade).then(setLink).catch(() => setError("Couldn't generate link. Try again.")); }, [trade.id]);
+  const copy = () => { if (link) navigator.clipboard.writeText(link).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); };
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={e => e.target === e.currentTarget && dispatch({ type: "CLOSE_MODAL" })}>
       <div className="fade-in" style={{ background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 28, width: "100%", maxWidth: 500 }}>
@@ -1617,8 +1639,10 @@ function ShareModal({ trade, dispatch }) {
           <button onClick={() => dispatch({ type: "CLOSE_MODAL" })} style={{ background: "none", border: "none", color: C.textMuted, fontSize: 22, cursor: "pointer" }}>×</button>
         </div>
         <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 16 }}>Anyone with this link can view your trade — no account needed.</div>
-        <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", fontSize: 12, color: C.textMuted, wordBreak: "break-all", marginBottom: 14, lineHeight: 1.6 }}>{link.slice(0, 100)}…</div>
-        <Btn onClick={copy} style={{ width: "100%", justifyContent: "center" }}>{copied ? "✓ Copied!" : "📋 Copy Share Link"}</Btn>
+        <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: C.textMuted, wordBreak: "break-all", marginBottom: 14, lineHeight: 1.6 }}>
+          {link || (error ? <span style={{ color: C.red }}>{error}</span> : "Generating link…")}
+        </div>
+        <Btn onClick={copy} disabled={!link} style={{ width: "100%", justifyContent: "center" }}>{copied ? "✓ Copied!" : "📋 Copy Share Link"}</Btn>
         <div style={{ marginTop: 16, padding: 14, background: C.surfaceHigh, borderRadius: 10 }}>
           <SectionLabel>Trade Summary</SectionLabel>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
@@ -1630,7 +1654,17 @@ function ShareModal({ trade, dispatch }) {
       </div>
     </div>
   );
+}function ShareLinkBox({ trade }) {
+  const [link, setLink] = useState(null);
+  useEffect(() => { createShareLink(trade).then(setLink); }, [trade.id]);
+  return (
+    <>
+      <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", fontSize: 11, color: C.textMuted, wordBreak: "break-all", marginBottom: 14, lineHeight: 1.7 }}>{link || "Generating link…"}</div>
+      <Btn onClick={() => link && navigator.clipboard.writeText(link)} disabled={!link} style={{ width: "100%", justifyContent: "center" }}>📋 Copy Share Link</Btn>
+    </>
+  );
 }
+
 
 // ─── IMAGE LIGHTBOX (in-app viewer — avoids the data: URL new-tab block) ────
 function ImageLightbox({ url, onClose }) {
@@ -1648,10 +1682,12 @@ function ImageLightbox({ url, onClose }) {
 }
 
 // ─── PUBLIC TRADE VIEW (when URL has #share=...) ─────────────────────────────
-function PublicTradeView({ encoded }) {
+function PublicTradeView({ id }) {
   const [lightboxUrl, setLightboxUrl] = useState(null);
-  let trade;
-  try { trade = JSON.parse(decodeURIComponent(escape(atob(encoded)))); } catch { return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.red }}>Invalid or expired trade link.</div>; }
+  const [trade, setTrade] = useState(undefined); // undefined = loading, null = not found
+  useEffect(() => { fetchSharedTrade(id).then(setTrade); }, [id]);
+  if (trade === undefined) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.textMuted }}>Loading shared trade…</div>;
+  if (!trade) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.red }}>Invalid or expired trade link.</div>;
   return (
     <div style={{ minHeight: "100vh", background: C.bg, padding: 28, maxWidth: 680, margin: "0 auto" }}>
       {lightboxUrl && <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
@@ -2998,17 +3034,7 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
           <div className="fade-in" onClick={e => e.stopPropagation()} style={{ background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 28, width: "100%", maxWidth: 500 }}>
             <div style={{ display: "flex", alignItems: "center", marginBottom: 20 }}><h2 style={{ fontSize: 18, fontWeight: 800, flex: 1 }}>Share Trade</h2><button onClick={() => setShowShare(false)} style={{ background: "none", border: "none", color: C.textMuted, fontSize: 22, cursor: "pointer" }}>×</button></div>
             <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 14 }}>Anyone with this link can view your trade — no account needed.</div>
-            {(() => {
-              const shareData = { id: trade.id, symbol: trade.symbol, direction: trade.direction, date: trade.date, entry: trade.entry, exit: trade.exit, size: trade.size, pnl: trade.pnl, pips: trade.pips, outcome: trade.outcome, setup: trade.setup, session: trade.session, mood: trade.mood, notes: trade.notes, screenshots: trade.screenshots };
-              const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(shareData))));
-              const link = `${window.location.origin}${window.location.pathname}#share=${encoded}`;
-              return (
-                <>
-                  <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 14px", fontSize: 11, color: C.textMuted, wordBreak: "break-all", marginBottom: 14, lineHeight: 1.7 }}>{link.slice(0, 120)}…</div>
-                  <Btn onClick={() => { navigator.clipboard.writeText(link); }} style={{ width: "100%", justifyContent: "center" }}>📋 Copy Share Link</Btn>
-                </>
-              );
-            })()}
+            <ShareLinkBox trade={trade} />
           </div>
         </div>
       )}
@@ -6414,7 +6440,7 @@ export default function App() {
         <div style={{ display: "flex", flexDirection: "column", height: "100vh" }}>
           <PlanAnnouncementBanner />
           <div style={{ flex: 1, minHeight: 0, overflowY: "auto" }}>
-            <PublicTradeView encoded={hash.slice(7)} />
+           <PublicTradeView id={hash.slice(7)} />
           </div>
         </div>
       </>
