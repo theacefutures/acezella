@@ -1569,7 +1569,7 @@ function AddTradeModal({ state, dispatch }) {
           </div>
 
           {/* Trade Screenshot */}
-          <ScreenshotUploader screenshots={form.screenshots} onChange={ss => set("screenshots")(ss)} max={isPlus(state) ? 6 : FREE_LIMITS.maxScreenshots} locked={!isPlus(state)} />
+          <ScreenshotUploader screenshots={form.screenshots} onChange={ss => set("screenshots")(ss)} max={isPlus(state) ? 6 : FREE_LIMITS.maxScreenshots} locked={!isPlus(state)} userId={state.currentUser?.id} />
         </div>
 
         <ModalDivider />
