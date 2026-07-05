@@ -1106,7 +1106,7 @@ function TopHeader({ state, dispatch, setPage, page }) {
 
       <button title="Settings" onClick={() => setPage("settings")} style={{ background: C.surfaceHigh, border: `1px solid ${C.border}`, borderRadius: 9, color: C.textMuted, width: 34, height: 34, cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>⚙️</button>
 
-      <a href="mailto:support@acezella.io" style={{ display: "flex", alignItems: "center", gap: 6, color: C.textMuted, fontSize: 13, fontWeight: 600, textDecoration: "none", padding: "8px 6px", whiteSpace: "nowrap" }}>✉ Contact Us</a>
+      <a href="mailto:acezella.journal@gmail.com" style={{ display: "flex", alignItems: "center", gap: 6, color: C.textMuted, fontSize: 13, fontWeight: 600, textDecoration: "none", padding: "8px 6px", whiteSpace: "nowrap" }}>✉ Contact Us</a>
 
       {/* Session control */}
       <div style={{ position: "relative" }}>
