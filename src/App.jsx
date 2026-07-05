@@ -1608,6 +1608,21 @@ function ShareModal({ trade, dispatch }) {
   );
 }
 
+// ─── IMAGE LIGHTBOX (in-app viewer — avoids the data: URL new-tab block) ────
+function ImageLightbox({ url, onClose }) {
+  useEffect(() => {
+    const onKey = e => { if (e.key === "Escape") onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000d", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
+      <img src={url} alt="" style={{ maxWidth: "95vw", maxHeight: "95vh", borderRadius: 10, boxShadow: "0 20px 60px #000a", objectFit: "contain" }} onClick={e => e.stopPropagation()} />
+      <button onClick={onClose} style={{ position: "fixed", top: 20, right: 20, background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: "50%", width: 42, height: 42, color: "#fff", fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+    </div>
+  );
+}
+
 // ─── PUBLIC TRADE VIEW (when URL has #share=...) ─────────────────────────────
 function PublicTradeView({ encoded }) {
   let trade;
