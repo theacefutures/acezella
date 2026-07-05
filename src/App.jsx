@@ -1649,10 +1649,12 @@ function ImageLightbox({ url, onClose }) {
 
 // ─── PUBLIC TRADE VIEW (when URL has #share=...) ─────────────────────────────
 function PublicTradeView({ encoded }) {
+  const [lightboxUrl, setLightboxUrl] = useState(null);
   let trade;
   try { trade = JSON.parse(decodeURIComponent(escape(atob(encoded)))); } catch { return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.red }}>Invalid or expired trade link.</div>; }
   return (
     <div style={{ minHeight: "100vh", background: C.bg, padding: 28, maxWidth: 680, margin: "0 auto" }}>
+      {lightboxUrl && <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
       <div style={{ textAlign: "center", marginBottom: 28 }}>
         <div style={{ fontSize: 22, fontWeight: 800, color: C.accent, fontFamily: "'Inter', sans-serif" }}>ACEZELLA</div>
         <div style={{ fontSize: 11, color: C.textMuted, letterSpacing: 3, textTransform: "uppercase" }}>Shared Trade</div>
@@ -1679,7 +1681,7 @@ function PublicTradeView({ encoded }) {
         <Card>
           <SectionLabel>Chart Screenshots</SectionLabel>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-            {trade.screenshots.map(s => <img key={s.id} src={s.url} alt="" style={{ width: "100%", borderRadius: 8, border: `1px solid ${C.border}` }} />)}
+            {trade.screenshots.map(s => <img key={s.id} src={s.url} alt="" style={{ width: "100%", borderRadius: 8, border: `1px solid ${C.border}`, cursor: "zoom-in" }} onClick={() => setLightboxUrl(s.url)} />)}
           </div>
         </Card>
       )}
@@ -2956,6 +2958,7 @@ function contextBucket(trades, field, value) {
 function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage }) {
   const { trades, activeAccount } = state;
   const [notes, setNotes] = useState(trade.notes || ""), [editNotes, setEditNotes] = useState(false), [showShare, setShowShare] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState(null);
   const saveNotes = () => { dispatch({ type: "UPDATE_TRADE", id: trade.id, data: { notes } }); setEditNotes(false); };
   const col = outcomeColor(trade.outcome, trade.pnl);
   const pool = trades.filter(t => activeAccount === "all" || t.account === activeAccount);
@@ -2989,6 +2992,7 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
 
   return (
     <div className="fade-in" style={{ height: "100%", overflowY: "auto", padding: 24 }}>
+      {lightboxUrl && <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
       {showShare && (
         <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setShowShare(false)}>
           <div className="fade-in" onClick={e => e.stopPropagation()} style={{ background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 28, width: "100%", maxWidth: 500 }}>
@@ -3051,9 +3055,9 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
             {trade.screenshots?.length > 0 ? (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
                 {trade.screenshots.map(s => (
-                  <a key={s.id} href={s.url} target="_blank" rel="noopener noreferrer">
-                    <img src={s.url} alt={s.name} style={{ width: "100%", borderRadius: 8, border: `1px solid ${C.border}`, display: "block" }} />
-                  </a>
+                  <img key={s.id} src={s.url} alt={s.name}
+                    style={{ width: "100%", borderRadius: 8, border: `1px solid ${C.border}`, display: "block", cursor: "zoom-in" }}
+                    onClick={() => setLightboxUrl(s.url)} />
                 ))}
               </div>
             ) : (
