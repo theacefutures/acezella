@@ -188,8 +188,7 @@ function sessionHourToLocalLabel(h) {
   return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
 }
 
-function getCurrentSessionState() {
-  const now = new Date();
+function getCurrentSessionState(now = new Date()) {
   const utcHour = now.getUTCHours() + now.getUTCMinutes() / 60;
   const current = SESSION_WINDOWS.find(w => utcHour >= w.start && utcHour < w.end) || SESSION_WINDOWS[SESSION_WINDOWS.length - 1];
   const minutesToEnd = Math.max(0, Math.round((current.end - utcHour) * 60));
@@ -197,22 +196,47 @@ function getCurrentSessionState() {
 }
 
 function SessionIndicator() {
-  const [info, setInfo] = useState(getCurrentSessionState());
+  const [now, setNow] = useState(new Date());
   const [open, setOpen] = useState(false);
   useEffect(() => {
-    const id = setInterval(() => setInfo(getCurrentSessionState()), 30000);
+    const id = setInterval(() => setNow(new Date()), 1000);
     return () => clearInterval(id);
   }, []);
-  const { current, minutesToEnd } = info;
+
+  const { current, minutesToEnd } = getCurrentSessionState(now);
   const hrs = Math.floor(minutesToEnd / 60), mins = minutesToEnd % 60;
+
+  const hh = String(now.getHours() % 12 || 12).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  const ss = String(now.getSeconds()).padStart(2, "0");
+  const ampm = now.getHours() >= 12 ? "PM" : "AM";
+  const dateLabel = now.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
 
   return (
     <div style={{ position: "relative" }}>
-      <button onClick={() => setOpen(o => !o)} style={{ display: "flex", alignItems: "center", gap: 8, background: current.color + "18", border: `1px solid ${current.color}44`, borderRadius: 9, color: current.color, fontSize: 13, fontWeight: 700, padding: "8px 14px", cursor: "pointer", whiteSpace: "nowrap" }}>
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: current.color, flexShrink: 0, boxShadow: `0 0 0 3px ${current.color}22` }} />
-        {current.name}
-        <span style={{ fontSize: 9, opacity: 0.7 }}>▾</span>
+      <button onClick={() => setOpen(o => !o)} style={{
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
+        background: C.surfaceHigh, border: `1px solid ${C.border}`, borderRadius: 12,
+        padding: "8px 16px", cursor: "pointer", lineHeight: 1,
+      }}>
+        <div className="mono" style={{ display: "flex", alignItems: "baseline", gap: 2 }}>
+          <span style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{hh}</span>
+          <span style={{ fontSize: 18, fontWeight: 800, color: C.textDim }}>:</span>
+          <span style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{mm}</span>
+          <span style={{ fontSize: 13, fontWeight: 700, color: C.textDim, marginLeft: 2 }}>:{ss}</span>
+          <span style={{ fontSize: 10, fontWeight: 700, color: C.textDim, marginLeft: 3, letterSpacing: 0.5 }}>{ampm}</span>
+        </div>
+        <div style={{ fontSize: 9.5, color: C.textDim, letterSpacing: 1, textTransform: "uppercase", marginTop: -1 }}>{dateLabel}</div>
+        <div style={{
+          display: "flex", alignItems: "center", gap: 6, marginTop: 3,
+          background: current.color + "20", border: `1px solid ${current.color}44`, borderRadius: 20,
+          padding: "3px 11px",
+        }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: current.color, flexShrink: 0 }} />
+          <span style={{ fontSize: 11.5, fontWeight: 700, color: current.color, whiteSpace: "nowrap" }}>{current.name}</span>
+        </div>
       </button>
+
       {open && (
         <>
           <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 39 }} />
@@ -6680,7 +6704,6 @@ export default function App() {
           <Sidebar page={page} setPage={setPage} state={state} dispatch={dispatch} mobileNavOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
           <div className="app-main" style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
             <div className="mobile-topbar"><SessionIndicator />
-            <div style={{ flex: 1 }} />
               <button onClick={() => openAddTrade(state, dispatch)} style={{ background: C.accent, border: "none", color: "#000", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>+ Trade</button>
             </div>
             <div style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
