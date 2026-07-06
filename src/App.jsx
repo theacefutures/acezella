@@ -1068,15 +1068,15 @@ function AuthScreen({ state, dispatch }) {
 // ─── LIVE SESSION CLOCK (header) ─────────────────────────────────────────────
 // Standard forex/futures session bands in UTC. Order matters — first match wins.
 const TRADING_SESSIONS =  [
-  { label: "Asian Session",       start: 0,    end: 7,    color: C.blue },
-  { label: "Pre-London",          start: 7,    end: 8,    color: "#38bdf8" },
-  { label: "London Session",      start: 8,    end: 12,   color: C.purple },
-  { label: "Pre-NY",              start: 12,   end: 13,   color: C.yellow },
-  { label: "NY Open",             start: 13,   end: 13.5, color: C.accent },
-  { label: "London/NY Overlap",   start: 13.5, end: 16,   color: "#ff8844" },
-  { label: "NYSE Session",        start: 16,   end: 20,   color: C.accent2 },
-  { label: "NY Close",            start: 20,   end: 22,   color: C.red },
-  { label: "Sydney/Asian Pre",    start: 22,   end: 24,   color: C.blue },
+  { label: "Asian Session",       start: 0,    end: 6,    color: C.blue },
+  { label: "Pre-London",          start: 6,    end: 7,    color: "#38bdf8" },
+  { label: "London Session",      start: 7,    end: 11,   color: C.purple },
+  { label: "Pre-NY",              start: 11,   end: 12,   color: C.yellow },
+  { label: "NY Open",             start: 12,   end: 13, color: C.accent },
+  { label: "London/NY Overlap",   start: 13,   end: 13.5,   color: "#ff8844" },
+  { label: "NYSE Open",           start: 13.5, end: 16.5,   color: C.accent2 },
+  { label: "NY Close",            start: 16.5,   end: 21,   color: C.red },
+  { label: "Sydney/Asian Pre",    start: 21,   end: 24,   color: C.blue },
 ];
 function getTradingSession(date) {
   const h = date.getUTCHours();
