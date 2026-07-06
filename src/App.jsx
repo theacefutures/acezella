@@ -589,7 +589,35 @@ function defaultState() {
     ],
   };
 }
-
+// True zero-state for brand-new signups — no demo trades, prop firms,
+// payouts, capital transactions, or live capital plan. The user builds
+// everything themselves from here.
+function blankState() {
+  const base = defaultState();
+  const today = new Date().toISOString().slice(0, 10);
+  return {
+    ...base,
+    accounts: [],
+    trades: [],
+    propFirms: [],
+    payouts: [],
+    strategies: [],
+    capitalTransactions: [],
+    weeklyNotes: {},
+    expenses: [],
+    journalNotes: {},
+    liveCapital: {
+      startingCapital: 0,
+      startingDate: today,
+      profitGoal: 0,
+      linkedAccount: "all",
+      contribution: { amount: 0, frequency: "Monthly", day: 1, startDate: today, autoAdd: false },
+      withdrawal: { amount: 0, frequency: "Monthly", day: 1, startDate: today, autoAdd: false },
+      dailyLossLimit: 0, weeklyLossLimit: 0, maxDrawdownLimit: 0, softWarningThreshold: 80,
+      growthStyle: "Balanced", accountPurpose: "Growth Account",
+    },
+  };
+}
 // Bump this whenever the *default* visual theme changes, so returning users
 // (who have a saved theme/transparency in localStorage) get migrated onto
 // the new look automatically instead of staying stuck on an older default.
@@ -652,12 +680,13 @@ function reducer(state, action) {
   switch (action.type) {
     case "LOGIN": next = { ...state, currentUser: action.user, modal: "welcome" }; break;
     case "LOGOUT": next = { ...state, currentUser: null }; break;
-    case "REGISTER": next = { ...state, users: [...state.users, action.user], currentUser: action.user, modal: "welcome" }; break;
+    case "REGISTER": next = { ...blankState(), users: [...state.users, action.user], currentUser: action.user, modal: "welcome" }; break;
     case "SET_ACTIVE_ACCOUNT": next = { ...state, activeAccount: action.id }; break;
     case "ADD_TRADE": next = { ...state, trades: [action.trade, ...state.trades] }; break;
     case "DELETE_TRADE": next = { ...state, trades: state.trades.filter(t => t.id !== action.id) }; break;
     case "UPDATE_TRADE": next = { ...state, trades: state.trades.map(t => t.id === action.id ? { ...t, ...action.data } : t) }; break;
     case "ADD_ACCOUNT": next = { ...state, accounts: [...state.accounts, action.account] }; break;
+    case "UPDATE_ACCOUNT": next = { ...state, accounts: state.accounts.map(a => a.id === action.id ? { ...a, ...action.data } : a) }; break;
     case "DELETE_ACCOUNT": next = { ...state, accounts: state.accounts.filter(a => a.id !== action.id), trades: state.trades.filter(t => t.account !== action.id) }; break;
     case "ADD_STRATEGY": next = { ...state, strategies: [...state.strategies, action.strategy] }; break;
     case "DELETE_STRATEGY": next = { ...state, strategies: state.strategies.filter(s => s.id !== action.id) }; break;
@@ -5885,6 +5914,8 @@ function LiveCapital({ state, dispatch, setPage }) {
 function Settings({ state, dispatch }) {
   const { accounts, sessions, emotions } = state;
   const [newAccName, setNewAccName] = useState(""), [newAccType, setNewAccType] = useState("Funded"), [newAccColor, setNewAccColor] = useState(ACCOUNT_COLORS[0]);
+  const [editingAccId, setEditingAccId] = useState(null);
+  const [editAccName, setEditAccName] = useState(""), [editAccType, setEditAccType] = useState("Funded"), [editAccColor, setEditAccColor] = useState(ACCOUNT_COLORS[0]);
   const [newSession, setNewSession] = useState(""), [newEmotion, setNewEmotion] = useState("");
   const [siteNameInput, setSiteNameInput] = useState(state.siteName || "ACEZELLA");
   const [confirmAction, setConfirmAction] = useState(null); // { message, onConfirm }
@@ -6129,14 +6160,53 @@ function Settings({ state, dispatch }) {
           {!isPlus(state) && <Badge color={C.purple}>{accounts.length}/{FREE_LIMITS.maxAccounts} (Ace Basic)</Badge>}
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
-          {accounts.map(a => (
-            <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: C.surfaceHigh, borderRadius: 10 }}>
-              <div style={{ width: 10, height: 10, borderRadius: "50%", background: a.color }} />
-              <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 14 }}>{a.name}</div><div style={{ fontSize: 11, color: C.textMuted }}>{a.type}</div></div>
-              <Badge color={a.color}>{calcStats(state.trades.filter(t => t.account === a.id)).netPnl >= 0 ? "+" : ""}{calcStats(state.trades.filter(t => t.account === a.id)).netPnl.toFixed(2)}</Badge>
-              <button onClick={() => setConfirmAction({ message: `Delete "${a.name}" and all its trades? This cannot be undone.`, onConfirm: () => dispatch({ type: "DELETE_ACCOUNT", id: a.id }) })} style={{ background: C.redDim, border: "none", borderRadius: 7, color: C.red, padding: "5px 10px", cursor: "pointer", fontSize: 12 }}>Delete</button>
-            </div>
-          ))}
+          {accounts.map(a => {
+            const isEditing = editingAccId === a.id;
+            const startEdit = () => {
+              setEditAccName(a.name); setEditAccType(a.type); setEditAccColor(a.color);
+              setEditingAccId(a.id);
+            };
+            const saveEdit = () => {
+              const name = editAccName.trim();
+              if (!name) return;
+              dispatch({ type: "UPDATE_ACCOUNT", id: a.id, data: { name, type: editAccType, color: editAccColor } });
+              setEditingAccId(null);
+            };
+            if (isEditing) {
+              return (
+                <div key={a.id} style={{ background: C.surfaceHigh, border: `1px solid ${C.accent}55`, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
+                    <Inp label="Account Name" value={editAccName} onChange={setEditAccName} placeholder="e.g. FTMO 100K Funded" />
+                    <Sel label="Type" value={editAccType} onChange={setEditAccType} options={["Funded", "Combine", "Live", "Demo"]} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 6 }}>Color</label>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {ACCOUNT_COLORS.map(col => (
+                        <div key={col} onClick={() => setEditAccColor(col)} style={{ width: 24, height: 24, borderRadius: "50%", background: col, cursor: "pointer", border: editAccColor === col ? "3px solid #fff" : "3px solid transparent", transition: "border 0.1s" }} />
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn small onClick={saveEdit} disabled={!editAccName.trim()}>Save Changes</Btn>
+                    <Btn small variant="ghost" onClick={() => setEditingAccId(null)}>Cancel</Btn>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: C.surfaceHigh, borderRadius: 10 }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: a.color, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
+                  <div style={{ fontSize: 11, color: C.textMuted }}>{a.type}</div>
+                </div>
+                <Badge color={a.color}>{calcStats(state.trades.filter(t => t.account === a.id)).netPnl >= 0 ? "+" : ""}{calcStats(state.trades.filter(t => t.account === a.id)).netPnl.toFixed(2)}</Badge>
+                <button onClick={startEdit} style={{ background: C.blueDim, border: "none", borderRadius: 7, color: C.blue, padding: "5px 10px", cursor: "pointer", fontSize: 12, flexShrink: 0 }}>Edit</button>
+                <button onClick={() => setConfirmAction({ message: `Delete "${a.name}" and all its trades? This cannot be undone.`, onConfirm: () => dispatch({ type: "DELETE_ACCOUNT", id: a.id }) })} style={{ background: C.redDim, border: "none", borderRadius: 7, color: C.red, padding: "5px 10px", cursor: "pointer", fontSize: 12, flexShrink: 0 }}>Delete</button>
+              </div>
+            );
+          })}
         </div>
         {canAddAccount(state) ? (
           <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
@@ -6415,7 +6485,7 @@ export default function App() {
         dispatch({ type: "IMPORT_DATA", data: { ...cloud, currentUser: state.currentUser } });
       } else {
         // Brand-new account — start clean instead of inheriting stray localStorage data.
-        dispatch({ type: "IMPORT_DATA", data: { ...defaultState(), currentUser: state.currentUser } });
+        dispatch({ type: "IMPORT_DATA", data: { ...blankState(), currentUser: state.currentUser } });
       }
       setCloudLoaded(true);
     });
