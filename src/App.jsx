@@ -1199,40 +1199,43 @@ function Sidebar({ page, setPage, state, dispatch, mobileNavOpen, onClose }) {
 }
 
 // ─── SCREENSHOT UPLOAD ────────────────────────────────────────────────────────
-function ScreenshotUploader({ screenshots = [], onChange, max = 6, locked, userId }) {
+function ScreenshotUploader({ screenshots = [], onChange, max = 4, locked, userId }) {
   const fileRef = useRef();
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState("");
 
   const handleFiles = async (files) => {
     const remaining = max - screenshots.length;
     const toProcess = Array.from(files).slice(0, remaining);
     if (!toProcess.length) return;
-    setError("");
+    setError(files.length > remaining ? `Only ${remaining} more screenshot${remaining !== 1 ? "s" : ""} allowed — extra files were skipped.` : "");
     setUploading(true);
-    const uploaded = [];
-    for (const file of toProcess) {
-      try {
-        const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-        const path = `${userId || "anon"}/${Date.now()}_${Math.random().toString(36).slice(2)}_${safeName}`;
-        const { error: uploadErr } = await supabase.storage.from("trade-screenshots").upload(path, file, { cacheControl: "3600", upsert: false });
-        if (uploadErr) { setError(uploadErr.message); continue; }
-        const { data } = supabase.storage.from("trade-screenshots").getPublicUrl(path);
-        uploaded.push({ id: Date.now() + Math.random(), url: data.publicUrl, name: file.name, path });
-      } catch (e) {
-        setError("Upload failed. Check your connection and try again.");
-      }
-    }
+    setProgress({ done: 0, total: toProcess.length });
+
+    const results = await Promise.allSettled(toProcess.map(async (file) => {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const path = `${userId || "anon"}/${Date.now()}_${Math.random().toString(36).slice(2)}_${safeName}`;
+      const { error: uploadErr } = await supabase.storage.from("trade-screenshots").upload(path, file, { cacheControl: "3600", upsert: false });
+      if (uploadErr) throw uploadErr;
+      const { data } = supabase.storage.from("trade-screenshots").getPublicUrl(path);
+      setProgress(p => ({ ...p, done: p.done + 1 }));
+      return { id: Date.now() + Math.random(), url: data.publicUrl, name: file.name, path };
+    }));
+
+    const uploaded = results.filter(r => r.status === "fulfilled").map(r => r.value);
+    const failed = results.filter(r => r.status === "rejected");
+    if (failed.length) setError(`${failed.length} file${failed.length !== 1 ? "s" : ""} failed to upload.`);
     if (uploaded.length) onChange([...screenshots, ...uploaded]);
     setUploading(false);
   };
 
   const remove = async (s) => {
     onChange(screenshots.filter(x => x.id !== s.id));
-    if (s.path) {
-      try { await supabase.storage.from("trade-screenshots").remove([s.path]); } catch {}
-    }
+    if (s.path) { try { await supabase.storage.from("trade-screenshots").remove([s.path]); } catch {} }
   };
+
+  const remainingSlots = max - screenshots.length;
 
   return (
     <div>
@@ -1247,13 +1250,14 @@ function ScreenshotUploader({ screenshots = [], onChange, max = 6, locked, userI
             <button onClick={() => remove(s)} style={{ position: "absolute", top: 4, right: 4, background: "#000b", border: "none", borderRadius: "50%", color: C.red, width: 22, height: 22, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
           </div>
         ))}
-        {screenshots.length < max && (
+        {remainingSlots > 0 && (
           <div onClick={() => !uploading && fileRef.current?.click()} style={{ border: `2px dashed ${C.border}`, borderRadius: 8, aspectRatio: "16/9", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: uploading ? "wait" : "pointer", gap: 4, color: C.textDim, fontSize: 12 }}>
-            {uploading ? <span>Uploading…</span> : <><span style={{ fontSize: 22 }}>+</span><span>Add Photo</span></>}
+            {uploading ? <span>Uploading {progress.done}/{progress.total}…</span> : <><span style={{ fontSize: 22 }}>+</span><span>Add Photos</span></>}
           </div>
         )}
       </div>
       {error && <div style={{ fontSize: 11, color: C.red, marginBottom: 8 }}>{error}</div>}
+      {remainingSlots > 1 && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Tip: tap "Add Photos" → choose "Photo Library" → select up to {remainingSlots} images at once before tapping Add.</div>}
       {locked && screenshots.length >= max && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Ace Basic allows {max} screenshot per trade. Upgrade to AcePlus for up to 6.</div>}
       <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
     </div>
