@@ -5949,7 +5949,7 @@ function LiveCapital({ state, dispatch, setPage }) {
 
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 function Settings({ state, dispatch }) {
-  const { accounts, sessions, emotions } = state;
+  const { accounts = [], sessions = [], emotions = [] } = state;
   const [newAccName, setNewAccName] = useState(""), [newAccType, setNewAccType] = useState("Funded"), [newAccColor, setNewAccColor] = useState(ACCOUNT_COLORS[0]);
   const [editingAccId, setEditingAccId] = useState(null);
   const [editAccName, setEditAccName] = useState(""), [editAccType, setEditAccType] = useState("Funded"), [editAccColor, setEditAccColor] = useState(ACCOUNT_COLORS[0]);
