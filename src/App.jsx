@@ -685,6 +685,7 @@ function reducer(state, action) {
     case "ADD_TRADE": next = { ...state, trades: [action.trade, ...state.trades] }; break;
     case "DELETE_TRADE": next = { ...state, trades: state.trades.filter(t => t.id !== action.id) }; break;
     case "UPDATE_TRADE": next = { ...state, trades: state.trades.map(t => t.id === action.id ? { ...t, ...action.data } : t) }; break;
+    case "COPY_TRADE": next = { ...state, trades: [{ ...action.trade, id: `t${Date.now()}_${Math.random().toString(36).slice(2, 7)}`, account: action.accountId }, ...state.trades] }; break;
     case "ADD_ACCOUNT": next = { ...state, accounts: [...state.accounts, action.account] }; break;
     case "UPDATE_ACCOUNT": next = { ...state, accounts: state.accounts.map(a => a.id === action.id ? { ...a, ...action.data } : a) }; break;
     case "DELETE_ACCOUNT": next = { ...state, accounts: state.accounts.filter(a => a.id !== action.id), trades: state.trades.filter(t => t.account !== action.id) }; break;
@@ -1796,6 +1797,47 @@ function ImageLightbox({ images, index, onClose, onNavigate }) {
   );
 }
 
+// ─── COPY TRADE TO ACCOUNT ────────────────────────────────────────────────────
+// Dropdown that lets a user duplicate a trade into any of their accounts
+// (including the trade's current account, to create a plain duplicate).
+function CopyToAccountMenu({ trade, state, dispatch, iconOnly }) {
+  const [open, setOpen] = useState(false);
+  const [copiedId, setCopiedId] = useState(null);
+  const { accounts } = state;
+  const close = () => setOpen(false);
+  const copyTo = (accountId) => {
+    dispatch({ type: "COPY_TRADE", trade, accountId });
+    setCopiedId(accountId);
+    setTimeout(() => setCopiedId(null), 1200);
+    setTimeout(close, 550);
+  };
+  return (
+    <div style={{ position: "relative", display: "inline-block" }} onClick={e => e.stopPropagation()}>
+      {iconOnly ? (
+        <button onClick={() => setOpen(o => !o)} title="Copy to account" style={{ width: 28, height: 28, borderRadius: 7, border: "none", background: C.purpleDim, color: C.purple, cursor: "pointer", fontSize: 12 }}>📋</button>
+      ) : (
+        <Btn small variant="ghost" onClick={() => setOpen(o => !o)}>📋 Copy to Account</Btn>
+      )}
+      {open && (
+        <>
+          <div onClick={close} style={{ position: "fixed", inset: 0, zIndex: 149 }} />
+          <div className="fade-in" style={{ position: "absolute", top: "calc(100% + 6px)", right: 0, minWidth: 220, background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 6, boxShadow: "0 12px 30px #000a", zIndex: 150, maxHeight: 320, overflowY: "auto" }}>
+            <div style={{ padding: "6px 10px", fontSize: 11, color: C.textDim, textTransform: "uppercase", letterSpacing: 1 }}>Copy this trade to</div>
+            {accounts.length === 0 && <div style={{ padding: "8px 10px", fontSize: 13, color: C.textDim }}>No accounts yet.</div>}
+            {accounts.map(a => (
+              <div key={a.id} onClick={() => copyTo(a.id)} style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 10px", borderRadius: 7, cursor: "pointer", fontSize: 13, color: C.text }}>
+                <span style={{ width: 7, height: 7, borderRadius: "50%", background: a.color, flexShrink: 0 }} />
+                <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}{a.id === trade.account ? " (current)" : ""}</span>
+                {copiedId === a.id && <span style={{ color: C.accent, fontSize: 11, fontWeight: 700 }}>Copied ✓</span>}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // ─── PUBLIC TRADE VIEW (when URL has #share=...) ─────────────────────────────
 function PublicTradeView({ id }) {
   const [lightboxIndex, setLightboxIndex] = useState(null);
@@ -2477,6 +2519,7 @@ function Journal({ state, dispatch, setPage }) {
                       {td(
                         <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
                           <button onClick={() => dispatch({ type: "OPEN_MODAL", modal: { type: "add_trade", trade: t } })} style={{ width: 28, height: 28, borderRadius: 7, border: "none", background: C.blueDim, color: C.blue, cursor: "pointer", fontSize: 12 }}>✏️</button>
+                          <CopyToAccountMenu trade={t} state={state} dispatch={dispatch} iconOnly />
                           <button onClick={() => dispatch({ type: "DELETE_TRADE", id: t.id })} style={{ width: 28, height: 28, borderRadius: 7, border: "none", background: C.redDim, color: C.red, cursor: "pointer", fontSize: 12 }}>🗑️</button>
                         </div>
                       )}
@@ -3160,6 +3203,7 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
         <div style={{ flex: 1 }} />
         <Btn small variant="ghost" onClick={() => setShowShare(true)}>🔗 Share</Btn>
         <Btn small variant="ghost" onClick={() => dispatch({ type: "OPEN_MODAL", modal: { type: "add_trade", trade } })}>✏️ Edit</Btn>
+        <CopyToAccountMenu trade={trade} state={state} dispatch={dispatch} />
         <Btn small variant="danger" onClick={() => { dispatch({ type: "DELETE_TRADE", id: trade.id }); onBack(); }}>Delete</Btn>
       </div>
 
