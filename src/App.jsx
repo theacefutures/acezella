@@ -1065,6 +1065,43 @@ function AuthScreen({ state, dispatch }) {
   );
 }
 
+// ─── LIVE SESSION CLOCK (header) ─────────────────────────────────────────────
+// Standard forex/futures session bands in UTC. Order matters — first match wins.
+const TRADING_SESSIONS = [
+  { start: 22, end: 24, label: "Pre Asia", color: C.purple },
+  { start: 0, end: 8, label: "Asia", color: C.blue },
+  { start: 8, end: 9, label: "Pre London", color: "#38bdf8" },
+  { start: 9, end: 13, label: "London", color: C.accent2 },
+  { start: 13, end: 17, label: "Overlap", color: C.accent },
+  { start: 17, end: 22, label: "New York", color: C.yellow },
+];
+function getTradingSession(date) {
+  const h = date.getUTCHours();
+  return TRADING_SESSIONS.find(s => h >= s.start && h < s.end) || TRADING_SESSIONS[0];
+}
+
+function LiveSessionClock() {
+  const [now, setNow] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+  const session = getTradingSession(now);
+  const timeStr = now.toLocaleTimeString("en-US", { hour12: false });
+  const dateStr = now.toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" }).toUpperCase();
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 10, background: C.surfaceHigh, border: `1px solid ${C.border}`, borderRadius: 9, padding: "7px 14px", flexShrink: 0 }}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: session.color, flexShrink: 0 }} />
+      <span className="mono" style={{ fontSize: 14, fontWeight: 800, color: C.text, fontVariantNumeric: "tabular-nums" }}>{timeStr}</span>
+      <span style={{ width: 1, height: 16, background: C.border }} />
+      <span style={{ fontSize: 10, color: C.textDim, fontWeight: 700, letterSpacing: 0.5 }}>{dateStr}</span>
+      <Badge color={session.color}>{session.label}</Badge>
+    </div>
+  );
+}
+
+
+
 // ─── TOP HEADER (account switcher · add trade · settings · session) ────────
 function TopHeader({ state, dispatch, setPage, page }) {
   const { currentUser, accounts, activeAccount } = state;
@@ -1099,10 +1136,7 @@ function TopHeader({ state, dispatch, setPage, page }) {
       display: "flex", alignItems: "center", gap: 10, padding: "10px 20px",
       borderBottom: `1px solid ${C.border}`, background: C.sidebar, flexShrink: 0, position: "relative", zIndex: 30,
     }}>
-      {/* Quick jump to Dashboard */}
-      <button onClick={() => setPage("dashboard")} style={{ display: "flex", alignItems: "center", gap: 7, background: page === "dashboard" ? C.surfaceHigh : "transparent", border: `1px solid ${page === "dashboard" ? C.border : "transparent"}`, borderRadius: 9, color: page === "dashboard" ? C.text : C.textMuted, fontSize: 13, fontWeight: 600, padding: "8px 14px", cursor: "pointer" }}>
-        <span style={{ fontSize: 13 }}>▦</span> Dashboard
-      </button>
+      <LiveSessionClock />
 
       <div style={{ flex: 1 }} />
 
