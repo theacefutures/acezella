@@ -167,101 +167,6 @@ const fmtDate = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "sho
 const fmtTime = (iso) => new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 const ACCOUNT_COLORS = [C.accent, C.yellow, C.blue, "#ff8844", "#cc44ff", "#44ccff", "#ff44cc"];
 
-// ─── TRADING SESSION CLOCK ───────────────────────────────────────────────────
-// Non-overlapping blocks covering 24h in UTC. Approximate, standard-hours
-// (doesn't shift for DST) — good enough for an at-a-glance header badge.
-const SESSION_WINDOWS = [
-  { name: "Asian Session",       start: 0,    end: 7,    color: C.blue },
-  { name: "Pre-London",          start: 7,    end: 8,    color: "#38bdf8" },
-  { name: "London Session",      start: 8,    end: 12,   color: C.purple },
-  { name: "Pre-NY",              start: 12,   end: 13,   color: C.yellow },
-  { name: "NY Open",             start: 13,   end: 13.5, color: C.accent },
-  { name: "London/NY Overlap",   start: 13.5, end: 16,   color: "#ff8844" },
-  { name: "NYSE Session",        start: 16,   end: 20,   color: C.accent2 },
-  { name: "NY Close",            start: 20,   end: 22,   color: C.red },
-  { name: "Sydney/Asian Pre",    start: 22,   end: 24,   color: C.blue },
-];
-
-function sessionHourToLocalLabel(h) {
-  const now = new Date();
-  const d = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate(), Math.floor(h), (h % 1) * 60));
-  return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
-}
-
-function getCurrentSessionState(now = new Date()) {
-  const utcHour = now.getUTCHours() + now.getUTCMinutes() / 60;
-  const current = SESSION_WINDOWS.find(w => utcHour >= w.start && utcHour < w.end) || SESSION_WINDOWS[SESSION_WINDOWS.length - 1];
-  const minutesToEnd = Math.max(0, Math.round((current.end - utcHour) * 60));
-  return { current, minutesToEnd };
-}
-
-function SessionIndicator() {
-  const [now, setNow] = useState(new Date());
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    const id = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(id);
-  }, []);
-
-  const { current, minutesToEnd } = getCurrentSessionState(now);
-  const hrs = Math.floor(minutesToEnd / 60), mins = minutesToEnd % 60;
-
-  const hh = String(now.getHours() % 12 || 12).padStart(2, "0");
-  const mm = String(now.getMinutes()).padStart(2, "0");
-  const ss = String(now.getSeconds()).padStart(2, "0");
-  const ampm = now.getHours() >= 12 ? "PM" : "AM";
-  const dateLabel = now.toLocaleDateString([], { weekday: "short", day: "numeric", month: "short" });
-
-  return (
-    <div style={{ position: "relative" }}>
-      <button onClick={() => setOpen(o => !o)} style={{
-        display: "flex", flexDirection: "column", alignItems: "center", gap: 4,
-        background: C.surfaceHigh, border: `1px solid ${C.border}`, borderRadius: 12,
-        padding: "8px 16px", cursor: "pointer", lineHeight: 1,
-      }}>
-        <div className="mono" style={{ display: "flex", alignItems: "baseline", gap: 2 }}>
-          <span style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{hh}</span>
-          <span style={{ fontSize: 18, fontWeight: 800, color: C.textDim }}>:</span>
-          <span style={{ fontSize: 20, fontWeight: 800, color: C.text }}>{mm}</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: C.textDim, marginLeft: 2 }}>:{ss}</span>
-          <span style={{ fontSize: 10, fontWeight: 700, color: C.textDim, marginLeft: 3, letterSpacing: 0.5 }}>{ampm}</span>
-        </div>
-        <div style={{ fontSize: 9.5, color: C.textDim, letterSpacing: 1, textTransform: "uppercase", marginTop: -1 }}>{dateLabel}</div>
-        <div style={{
-          display: "flex", alignItems: "center", gap: 6, marginTop: 3,
-          background: current.color + "20", border: `1px solid ${current.color}44`, borderRadius: 20,
-          padding: "3px 11px",
-        }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: current.color, flexShrink: 0 }} />
-          <span style={{ fontSize: 11.5, fontWeight: 700, color: current.color, whiteSpace: "nowrap" }}>{current.name}</span>
-        </div>
-      </button>
-
-      {open && (
-        <>
-          <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 39 }} />
-          <div className="fade-in" style={{ position: "absolute", top: "calc(100% + 6px)", left: 0, minWidth: 250, background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 10, padding: 8, boxShadow: "0 12px 30px #000a", zIndex: 40 }}>
-            <div style={{ fontSize: 10, color: C.textDim, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", padding: "4px 8px 8px" }}>Session Schedule (your local time)</div>
-            {SESSION_WINDOWS.map(w => {
-              const active = w.name === current.name;
-              return (
-                <div key={w.name} style={{ display: "flex", alignItems: "center", gap: 8, padding: "7px 8px", borderRadius: 7, background: active ? w.color + "18" : "transparent" }}>
-                  <span style={{ width: 7, height: 7, borderRadius: "50%", background: w.color, flexShrink: 0 }} />
-                  <span style={{ flex: 1, fontSize: 12.5, fontWeight: active ? 700 : 500, color: active ? w.color : C.text }}>{w.name}</span>
-                  <span style={{ fontSize: 11, color: C.textDim }}>{sessionHourToLocalLabel(w.start)}–{sessionHourToLocalLabel(w.end === 24 ? 0 : w.end)}</span>
-                </div>
-              );
-            })}
-            <div style={{ borderTop: `1px solid ${C.border}`, marginTop: 6, padding: "8px 8px 2px", fontSize: 11, color: C.textDim }}>
-              {current.name} {minutesToEnd === 0 ? "ending now" : `closes in ${hrs > 0 ? `${hrs}h ` : ""}${mins}m`}
-            </div>
-          </div>
-        </>
-      )}
-    </div>
-  );
-}
-
 // ─── PLAN / FEATURE GATING ────────────────────────────────────────────────────
 // Ace Basic (free) vs AcePlus ($10/mo). NOTE: this is client-side UI gating
 // only — there's no backend/payment processor wired up yet, so it's easy to
@@ -6703,7 +6608,9 @@ export default function App() {
         <div className="app-shell" style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
           <Sidebar page={page} setPage={setPage} state={state} dispatch={dispatch} mobileNavOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
           <div className="app-main" style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
-            <div className="mobile-topbar"><SessionIndicator />
+            <div className="mobile-topbar">
+              <button onClick={() => setMobileNavOpen(true)} aria-label="Open menu" style={{ background: "none", border: "none", color: C.text, fontSize: 22, cursor: "pointer", padding: "4px 6px" }}>☰</button>
+              <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}><span>{currentNav?.icon}</span>{currentNav?.label}</div>
               <button onClick={() => openAddTrade(state, dispatch)} style={{ background: C.accent, border: "none", color: "#000", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>+ Trade</button>
             </div>
             <div style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
