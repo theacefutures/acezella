@@ -213,10 +213,10 @@ function PlanAnnouncementBanner() {
     }}>
       <span style={{ fontSize: 15, flexShrink: 0 }}>✨</span>
       <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: 0.2 }}>
-        Wellcome to ACEZELLA.
+        My Name Is SAOOD.
       </span>
       <span style={{ fontSize: 12.5, fontWeight: 500, opacity: 0.95 }}>
-        Journal for 8 Figure Traders!
+       Only Good Things Happens to me!
       </span>
     </div>
   );
