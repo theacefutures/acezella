@@ -213,7 +213,7 @@ function PlanAnnouncementBanner() {
     }}>
       <span style={{ fontSize: 15, flexShrink: 0 }}>✨</span>
       <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: 0.2 }}>
-        Wellcome to Acezella.
+        Wellcome to ACESUITE.
       </span>
       <span style={{ fontSize: 12.5, fontWeight: 500, opacity: 0.95 }}>
         Journal for 8 Figure Traders!
@@ -1038,7 +1038,7 @@ function AuthScreen({ state, dispatch }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ width: "100%", maxWidth: 440 }} className="fade-in">
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: -2, fontFamily: "'Inter', sans-serif", ...gradientTextStyle() }}>{state.siteName || "ACEZELLA"}</div>
+          <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: -2, fontFamily: "'Inter', sans-serif", ...gradientTextStyle() }}>{state.siteName || "ACESUITE"}</div>
           <div style={{ fontSize: 11, color: C.textMuted, letterSpacing: 4, textTransform: "uppercase", marginTop: 4 }}>Trading Journal</div>
         </div>
         <Card style={{ padding: 32 }}>
@@ -1239,7 +1239,7 @@ function Sidebar({ page, setPage, state, dispatch, mobileNavOpen, onClose }) {
       <div className={`app-sidebar${mobileNavOpen ? " open" : ""}`} style={{ width: 224, minWidth: 224, background: C.sidebar, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", height: "100%" }}>
         <div style={{ padding: "18px 16px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div>
-            <div style={{ fontSize: 19, fontWeight: 800, fontFamily: "'Inter', sans-serif", letterSpacing: -1, ...gradientTextStyle() }}>{state.siteName || "ACEZELLA"}</div>
+            <div style={{ fontSize: 19, fontWeight: 800, fontFamily: "'Inter', sans-serif", letterSpacing: -1, ...gradientTextStyle() }}>{state.siteName || "ACESUITE"}</div>
             <div style={{ fontSize: 9, color: C.accent, letterSpacing: 3, textTransform: "uppercase", marginTop: 2, opacity: 0.85 }}>Trading Journal</div>
           </div>
           <button onClick={onClose} className="sidebar-close-btn" style={{ background: "none", border: "none", color: C.textMuted, fontSize: 22, cursor: "pointer", display: "none" }}>×</button>
