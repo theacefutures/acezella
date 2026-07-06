@@ -213,10 +213,10 @@ function PlanAnnouncementBanner() {
     }}>
       <span style={{ fontSize: 15, flexShrink: 0 }}>✨</span>
       <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: 0.2 }}>
-        My Name Is SAOOD.
+        My name is SAOOD.
       </span>
       <span style={{ fontSize: 12.5, fontWeight: 500, opacity: 0.95 }}>
-       Only Good Things Happens to me!
+        Only Good Things Happen To Me!
       </span>
     </div>
   );
@@ -1766,30 +1766,47 @@ function ShareModal({ trade, dispatch }) {
 
 
 // ─── IMAGE LIGHTBOX (in-app viewer — avoids the data: URL new-tab block) ────
-function ImageLightbox({ url, onClose }) {
+// images: array of URL strings. index: currently shown position. onNavigate(newIndex): called when user moves prev/next.
+function ImageLightbox({ images, index, onClose, onNavigate }) {
+  const hasMultiple = Array.isArray(images) && images.length > 1;
+  const goPrev = e => { e && e.stopPropagation(); if (!hasMultiple) return; onNavigate((index - 1 + images.length) % images.length); };
+  const goNext = e => { e && e.stopPropagation(); if (!hasMultiple) return; onNavigate((index + 1) % images.length); };
   useEffect(() => {
-    const onKey = e => { if (e.key === "Escape") onClose(); };
+    const onKey = e => {
+      if (e.key === "Escape") onClose();
+      else if (e.key === "ArrowLeft") goPrev();
+      else if (e.key === "ArrowRight") goNext();
+    };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, index, images]);
+  const url = Array.isArray(images) ? images[index] : images;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000d", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
       <img src={url} alt="" style={{ maxWidth: "95vw", maxHeight: "95vh", borderRadius: 10, boxShadow: "0 20px 60px #000a", objectFit: "contain" }} onClick={e => e.stopPropagation()} />
       <button onClick={onClose} style={{ position: "fixed", top: 20, right: 20, background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: "50%", width: 42, height: 42, color: "#fff", fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+      {hasMultiple && (
+        <>
+          <button onClick={goPrev} aria-label="Previous image" style={{ position: "fixed", left: 20, top: "50%", transform: "translateY(-50%)", background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: "50%", width: 46, height: 46, color: "#fff", fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+          <button onClick={goNext} aria-label="Next image" style={{ position: "fixed", right: 20, top: "50%", transform: "translateY(-50%)", background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: "50%", width: 46, height: 46, color: "#fff", fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+          <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 13, fontWeight: 600 }}>{index + 1} / {images.length}</div>
+        </>
+      )}
     </div>
   );
 }
 
 // ─── PUBLIC TRADE VIEW (when URL has #share=...) ─────────────────────────────
 function PublicTradeView({ id }) {
-  const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
   const [trade, setTrade] = useState(undefined); // undefined = loading, null = not found
   useEffect(() => { fetchSharedTrade(id).then(setTrade); }, [id]);
   if (trade === undefined) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.textMuted }}>Loading shared trade…</div>;
   if (!trade) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.red }}>Invalid or expired trade link.</div>;
+  const shotUrls = (trade.screenshots || []).map(s => s.url);
   return (
     <div style={{ minHeight: "100vh", background: C.bg, padding: 28, maxWidth: 680, margin: "0 auto" }}>
-      {lightboxUrl && <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
+      {lightboxIndex !== null && <ImageLightbox images={shotUrls} index={lightboxIndex} onClose={() => setLightboxIndex(null)} onNavigate={setLightboxIndex} />}
       <div style={{ textAlign: "center", marginBottom: 28 }}>
         <div style={{ fontSize: 22, fontWeight: 800, color: C.accent, fontFamily: "'Inter', sans-serif" }}>ACEZELLA</div>
         <div style={{ fontSize: 11, color: C.textMuted, letterSpacing: 3, textTransform: "uppercase" }}>Shared Trade</div>
@@ -1816,7 +1833,7 @@ function PublicTradeView({ id }) {
         <Card>
           <SectionLabel>Chart Screenshots</SectionLabel>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-            {trade.screenshots.map(s => <img key={s.id} src={s.url} alt="" style={{ width: "100%", borderRadius: 8, border: `1px solid ${C.border}`, cursor: "zoom-in" }} onClick={() => setLightboxUrl(s.url)} />)}
+            {trade.screenshots.map((s, i) => <img key={s.id} src={s.url} alt="" style={{ width: "100%", borderRadius: 8, border: `1px solid ${C.border}`, cursor: "zoom-in" }} onClick={() => setLightboxIndex(i)} />)}
           </div>
         </Card>
       )}
@@ -3093,7 +3110,7 @@ function contextBucket(trades, field, value) {
 function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage }) {
   const { trades, activeAccount } = state;
   const [notes, setNotes] = useState(trade.notes || ""), [editNotes, setEditNotes] = useState(false), [showShare, setShowShare] = useState(false);
-  const [lightboxUrl, setLightboxUrl] = useState(null);
+  const [lightboxIndex, setLightboxIndex] = useState(null);
   const saveNotes = () => { dispatch({ type: "UPDATE_TRADE", id: trade.id, data: { notes } }); setEditNotes(false); };
   const col = outcomeColor(trade.outcome, trade.pnl);
   const pool = trades.filter(t => activeAccount === "all" || t.account === activeAccount);
@@ -3127,7 +3144,7 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
 
   return (
     <div className="fade-in" style={{ height: "100%", overflowY: "auto", padding: 24 }}>
-      {lightboxUrl && <ImageLightbox url={lightboxUrl} onClose={() => setLightboxUrl(null)} />}
+      {lightboxIndex !== null && <ImageLightbox images={(trade.screenshots || []).map(s => s.url)} index={lightboxIndex} onClose={() => setLightboxIndex(null)} onNavigate={setLightboxIndex} />}
       {showShare && (
         <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setShowShare(false)}>
           <div className="fade-in" onClick={e => e.stopPropagation()} style={{ background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 28, width: "100%", maxWidth: 500 }}>
@@ -3179,10 +3196,10 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
             </div>
             {trade.screenshots?.length > 0 ? (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
-                {trade.screenshots.map(s => (
+                {trade.screenshots.map((s, i) => (
                   <img key={s.id} src={s.url} alt={s.name}
                     style={{ width: "100%", borderRadius: 8, border: `1px solid ${C.border}`, display: "block", cursor: "zoom-in" }}
-                    onClick={() => setLightboxUrl(s.url)} />
+                    onClick={() => setLightboxIndex(i)} />
                 ))}
               </div>
             ) : (
