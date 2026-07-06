@@ -213,10 +213,10 @@ function PlanAnnouncementBanner() {
     }}>
       <span style={{ fontSize: 15, flexShrink: 0 }}>✨</span>
       <span style={{ fontSize: 13, fontWeight: 800, letterSpacing: 0.2 }}>
-        Every AcePlus feature is FREE right now.
+        Wellcome to Acezella.
       </span>
       <span style={{ fontSize: 12.5, fontWeight: 500, opacity: 0.95 }}>
-        Some features will become paid soon. Enjoy full access while it lasts!
+        Journal for 8 Figure Traders!
       </span>
     </div>
   );
