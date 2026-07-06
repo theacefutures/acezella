@@ -1791,7 +1791,7 @@ function PublicTradeView({ id }) {
           </div>
         </Card>
       )}
-      <div style={{ textAlign: "center", marginTop: 24, fontSize: 12, color: C.textDim }}>Shared via ACEZELLA Trading Journal</div>
+      <div style={{ textAlign: "center", marginTop: 24, fontSize: 12, color: C.textDim }}>Shared via ACESUITE Trading Journal</div>
     </div>
   );
 }
