@@ -6679,9 +6679,8 @@ export default function App() {
         <div className="app-shell" style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
           <Sidebar page={page} setPage={setPage} state={state} dispatch={dispatch} mobileNavOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
           <div className="app-main" style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
-            <div className="mobile-topbar">
-              <button onClick={() => setMobileNavOpen(true)} aria-label="Open menu" style={{ background: "none", border: "none", color: C.text, fontSize: 22, cursor: "pointer", padding: "4px 6px" }}>☰</button>   
-              <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}>         <SessionIndicator />   {/* ← add this line */}    <span>{currentNav?.icon}</span>{currentNav?.label}</div>
+            <div className="mobile-topbar"><SessionIndicator />
+            <div style={{ flex: 1 }} />
               <button onClick={() => openAddTrade(state, dispatch)} style={{ background: C.accent, border: "none", color: "#000", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>+ Trade</button>
             </div>
             <div style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
