@@ -1013,6 +1013,8 @@ function AuthScreen({ state, dispatch }) {
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState(""), [password, setPassword] = useState(""), [name, setName] = useState(""), [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [showSignupNotice, setShowSignupNotice] = useState(false);
+  const SIGNUP_CONTACT_EMAIL = "acezella.journal@gmail.com";
   const login = async () => {
     if (!email || !password) { setError("Email and password required."); return; }
     setError(""); setBusy(true);
@@ -1044,7 +1046,7 @@ function AuthScreen({ state, dispatch }) {
         <Card style={{ padding: 32 }}>
           <div style={{ display: "flex", gap: 4, marginBottom: 24, background: C.bg, borderRadius: 10, padding: 4 }}>
             {[["login", "Sign In"], ["register", "Create Account"]].map(([m, l]) => (
-              <button key={m} onClick={() => { setMode(m); setError(""); }} style={{ flex: 1, padding: 8, borderRadius: 8, border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all 0.15s", background: mode === m ? C.accent : "transparent", color: mode === m ? "#000" : C.textMuted }}>{l}</button>
+              <button key={m} onClick={() => { if (m === "register") { setShowSignupNotice(true); return; } setMode(m); setError(""); }} style={{ flex: 1, padding: 8, borderRadius: 8, border: "none", fontSize: 13, fontWeight: 600, cursor: "pointer", transition: "all 0.15s", background: mode === m ? C.accent : "transparent", color: mode === m ? "#000" : C.textMuted }}>{l}</button>
             ))}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -1057,10 +1059,37 @@ function AuthScreen({ state, dispatch }) {
           <div style={{ display: "flex", alignItems: "center", gap: 12, margin: "18px 0" }}>
             <div style={{ flex: 1, height: 1, background: C.border }} /><span style={{ fontSize: 12, color: C.textDim }}>or</span><div style={{ flex: 1, height: 1, background: C.border }} />
           </div>
-          <Btn variant="ghost" onClick={() => { setMode(m => m === "login" ? "register" : "login"); setError(""); }} style={{ width: "100%", justifyContent: "center" }}>{mode === "login" ? "Need an account? Sign up" : "Already have an account? Sign in"}</Btn>
+          <Btn variant="ghost" onClick={() => { if (mode === "login") { setShowSignupNotice(true); return; } setMode("login"); setError(""); }} style={{ width: "100%", justifyContent: "center" }}>{mode === "login" ? "Need an account? Sign up" : "Already have an account? Sign in"}</Btn>
         </Card>
         <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: C.textDim }}>Contact To Sign Up: acezella.journal@gmail.com </div>
       </div>
+      {showSignupNotice && (
+        <div
+          onClick={() => setShowSignupNotice(false)}
+          style={{ position: "fixed", inset: 0, zIndex: 1000, background: "#000000aa", display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            className="fade-in"
+            style={{ width: "100%", maxWidth: 380, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 14, padding: 28, textAlign: "center", boxShadow: "0 20px 60px #000a" }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 600, color: C.text, lineHeight: 1.5, marginBottom: 20 }}>
+              This journal is not free, contact <span style={{ color: C.accent }}>{SIGNUP_CONTACT_EMAIL}</span> to get access.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <Btn
+                onClick={() => { window.location.href = `mailto:${SIGNUP_CONTACT_EMAIL}?subject=${encodeURIComponent("Access request - Trading Journal")}`; }}
+                style={{ justifyContent: "center" }}
+              >
+                Contact to Get Access
+              </Btn>
+              <Btn variant="ghost" onClick={() => setShowSignupNotice(false)} style={{ justifyContent: "center" }}>
+                Close
+              </Btn>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
