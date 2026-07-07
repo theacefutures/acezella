@@ -1869,7 +1869,7 @@ function PublicTradeView({ id }) {
             </div>
           ))}
         </div>
-        {trade.notes && <div style={{ marginTop: 16, padding: 14, background: C.surfaceHigh, borderRadius: 10, fontSize: 14, color: C.textMuted, lineHeight: 1.7 }}>{trade.notes}</div>}
+        {trade.notes && <div style={{ marginTop: 16, padding: 14, background: C.surfaceHigh, borderRadius: 10, fontSize: 14, color: C.textMuted, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{trade.notes}</div>}
       </Card>
       {trade.screenshots?.length > 0 && (
         <Card>
@@ -3346,7 +3346,7 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
                 <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} style={{ background: C.surfaceHigh, border: `1px solid ${C.accent}`, borderRadius: 8, color: C.text, padding: 12, fontSize: 13, resize: "vertical", outline: "none", fontFamily: "inherit", width: "100%" }} />
                 <div style={{ display: "flex", gap: 8 }}><Btn small onClick={saveNotes}>Save</Btn><Btn small variant="ghost" onClick={() => { setNotes(trade.notes || ""); setEditNotes(false); }}>Cancel</Btn></div>
               </div>
-            ) : <div style={{ fontSize: 13, color: trade.notes ? C.text : C.textDim, lineHeight: 1.7 }}>{trade.notes || "Click + Add to start writing…"}</div>}
+            ) : <div style={{ fontSize: 13, color: trade.notes ? C.text : C.textDim, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{trade.notes || "Click + Add to start writing…"}</div>}
           </Card>
 
           {/* Playbook Setup */}
