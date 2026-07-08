@@ -2821,12 +2821,9 @@ const INSPIRE_QUOTES = [
   { q: "Slow and steady wins the race.", a: "Aesop" },
 ];
 const INSPIRE_VERSES = [
-  { v: "I can do all things through Christ who strengthens me.", r: "Philippians 4:13" },
+  { v: "And He will provide for him from where he does not expect. And whoever relies upon Allah - then He is sufficient for him. Indeed, Allah will accomplish His purpose. Allah has already set for everything a [decreed] extent.", r: "65:3 Quran" },
   { v: "ALLAH Is Enough For Me.", r: "9:129 Quran", link: "https://myislam.org/surah-taubah/ayat-129/" },
-  { v: "Be still, and know that I am God.", r: "Psalm 46:10" },
-  { v: "Commit to the Lord whatever you do, and He will establish your plans.", r: "Proverbs 16:3" },
-  { v: "For I know the plans I have for you, declares the Lord.", r: "Jeremiah 29:11" },
-];
+]
 // Short daily Quran ayat — one is picked deterministically per calendar day
 // (via pickForDate/hashDateSeed, same mechanism used for the quote/verse of
 // the day), so it stays the same all day and rotates automatically right
