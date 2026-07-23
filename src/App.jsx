@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "./supabaseClient";
-import { loadCloudState, saveCloudState } from "./lib/cloudSync";
+import { loadCloudState, saveCloudState, flushCloudStateSync, getLocalCache, onSyncStatusChange } from "./lib/cloudSync";
 
 // ─── THEME ───────────────────────────────────────────────────────────────────
 // C is intentionally a single mutable object — every component reads C.xxx at
@@ -723,7 +723,6 @@ function reducer(state, action) {
     case "DELETE_CAPITAL_TX": next = { ...state, capitalTransactions: (state.capitalTransactions || []).filter(t => t.id !== action.id) }; break;
     default: return state;
   }
-  saveData(next);
   return next;
 }
 
@@ -1136,7 +1135,19 @@ function LiveSessionClock() {
 
 
 // ─── TOP HEADER (account switcher · add trade · settings · session) ────────
-function TopHeader({ state, dispatch, setPage, page }) {
+// ─── SYNC STATUS BADGE (Supabase save state) ─────────────────────────────────
+function SyncBadge({ status }) {
+  const map = {
+    saved:   { text: "✓ Saved",               color: C.accent },
+    pending: { text: "⋯ Saving…",              color: C.blue },
+    saving:  { text: "⋯ Saving…",              color: C.blue },
+    error:   { text: "⚠ Offline — will retry", color: C.red },
+  };
+  const s = map[status] || map.saved;
+  return <span title="Cloud sync status" style={{ fontSize: 11, fontWeight: 700, color: s.color, whiteSpace: "nowrap", flexShrink: 0 }}>{s.text}</span>;
+}
+
+function TopHeader({ state, dispatch, setPage, page, syncStatus }) {
   const { currentUser, accounts, activeAccount } = state;
   const [userOpen, setUserOpen] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
@@ -1226,6 +1237,8 @@ function TopHeader({ state, dispatch, setPage, page }) {
           </>
         )}
       </div>
+
+      <SyncBadge status={syncStatus} />
 
       <button title="Settings" onClick={() => setPage("settings")} style={{ background: C.surfaceHigh, border: `1px solid ${C.border}`, borderRadius: 9, color: C.textMuted, width: 34, height: 34, cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>⚙️</button>
 
@@ -6604,6 +6617,7 @@ export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [cloudLoaded, setCloudLoaded] = useState(false);
+  const [syncStatus, setSyncStatus] = useState("saved"); // "saved" | "pending" | "saving" | "error"
   const dispatch = useCallback(action => setRawState(prev => reducer(prev, action)), []);
 
   // ── Restore Supabase session on load, and react to sign-in/out elsewhere ──
@@ -6621,6 +6635,10 @@ export default function App() {
   }, []);
 
   // ── Pull this user's saved cloud state the moment they're identified ──
+  // Supabase is the source of truth. localStorage is only ever consulted
+  // here as a fallback — and only if it's flagged "unsynced" (i.e. a prior
+  // save to Supabase failed) — so a change is never silently lost, but a
+  // stale local copy can never overwrite a good cloud copy either.
   useEffect(() => {
     if (!state.currentUser?.id) return;
     let cancelled = false;
@@ -6630,18 +6648,47 @@ export default function App() {
       if (cloud) {
         dispatch({ type: "IMPORT_DATA", data: { ...cloud, currentUser: state.currentUser } });
       } else {
-        // Brand-new account — start clean instead of inheriting stray localStorage data.
-        dispatch({ type: "IMPORT_DATA", data: { ...blankState(), currentUser: state.currentUser } });
+        const cached = getLocalCache(state.currentUser.id);
+        if (cached?.unsynced) {
+          // Cloud has nothing yet because a previous save failed — recover
+          // the unsynced local copy and let it re-push automatically.
+          dispatch({ type: "IMPORT_DATA", data: { ...cached.state, currentUser: state.currentUser } });
+        } else {
+          // Brand-new account — start clean.
+          dispatch({ type: "IMPORT_DATA", data: { ...blankState(), currentUser: state.currentUser } });
+        }
       }
       setCloudLoaded(true);
     });
     return () => { cancelled = true; };
   }, [state.currentUser?.id]);
 
-  // ── Push every change back up to Supabase (debounced), once initial pull is done ──
+  // ── Push every change back up to Supabase (debounced + coalesced), once initial pull is done ──
   useEffect(() => {
     if (state.currentUser?.id && cloudLoaded) saveCloudState(state.currentUser.id, state);
   }, [state, cloudLoaded]);
+
+  // ── Reliable flush right before the tab actually goes away ──────────────
+  // The debounced save above can lose a race if the tab is closed within
+  // its window. visibilitychange/pagehide fire while the page is still
+  // alive enough for a keepalive fetch to complete, unlike beforeunload
+  // alone (which browsers may cut short).
+  useEffect(() => {
+    if (!state.currentUser?.id) return;
+    const flush = () => flushCloudStateSync(state.currentUser.id, state);
+    const onVis = () => { if (document.hidden) flush(); };
+    document.addEventListener("visibilitychange", onVis);
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVis);
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("beforeunload", flush);
+    };
+  }, [state.currentUser?.id, state]);
+
+  // ── Track sync status for the header badge ───────────────────────────────
+  useEffect(() => onSyncStatusChange(setSyncStatus), []);
 
   useEffect(() => {
     let tag = document.querySelector('meta[name="viewport"]');
@@ -6728,14 +6775,17 @@ export default function App() {
       )}
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", position: "relative", zIndex: 1 }}>
         <PlanAnnouncementBanner />
-        <TopHeader state={state} dispatch={dispatch} setPage={setPage} page={page} />
+        <TopHeader state={state} dispatch={dispatch} setPage={setPage} page={page} syncStatus={syncStatus} />
         <div className="app-shell" style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
           <Sidebar page={page} setPage={setPage} state={state} dispatch={dispatch} mobileNavOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
           <div className="app-main" style={{ flex: 1, overflow: "hidden", display: "flex", flexDirection: "column", minWidth: 0, minHeight: 0 }}>
             <div className="mobile-topbar">
               <button onClick={() => setMobileNavOpen(true)} aria-label="Open menu" style={{ background: "none", border: "none", color: C.text, fontSize: 22, cursor: "pointer", padding: "4px 6px" }}>☰</button>
-              <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 6 }}><span>{currentNav?.icon}</span>{currentNav?.label}</div>
-              <button onClick={() => openAddTrade(state, dispatch)} style={{ background: C.accent, border: "none", color: "#000", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>+ Trade</button>
+              <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 6, minWidth: 0, overflow: "hidden" }}><span>{currentNav?.icon}</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentNav?.label}</span></div>
+              <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                <SyncBadge status={syncStatus} />
+                <button onClick={() => openAddTrade(state, dispatch)} style={{ background: C.accent, border: "none", color: "#000", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>+ Trade</button>
+              </div>
             </div>
             <div style={{ flex: 1, overflow: "hidden", minHeight: 0 }}>
               <PageErrorBoundary key={page}>{pages[page]}</PageErrorBoundary>
