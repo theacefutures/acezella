@@ -2443,6 +2443,7 @@ function Journal({ state, dispatch, setPage }) {
   const { trades, activeAccount, strategies } = state;
   const [search, setSearch] = useState(""), [filterDir, setFilterDir] = useState("All"), [filterOutcome, setFilterOutcome] = useState("All"), [selected, setSelected] = useState(null);
   const [sortField, setSortField] = useState("date"), [sortDir, setSortDir] = useState("desc"), [hoverId, setHoverId] = useState(null);
+  const [deleteConfirmTrade, setDeleteConfirmTrade] = useState(null);
   const visible = trades.filter(t => {
     const accOk = activeAccount === "all" || t.account === activeAccount;
     const q = search.toLowerCase();
@@ -2533,7 +2534,7 @@ function Journal({ state, dispatch, setPage }) {
                         <div style={{ display: "flex", gap: 6 }} onClick={e => e.stopPropagation()}>
                           <button onClick={() => dispatch({ type: "OPEN_MODAL", modal: { type: "add_trade", trade: t } })} style={{ width: 28, height: 28, borderRadius: 7, border: "none", background: C.blueDim, color: C.blue, cursor: "pointer", fontSize: 12 }}>✏️</button>
                           <CopyToAccountMenu trade={t} state={state} dispatch={dispatch} iconOnly />
-                          <button onClick={() => dispatch({ type: "DELETE_TRADE", id: t.id })} style={{ width: 28, height: 28, borderRadius: 7, border: "none", background: C.redDim, color: C.red, cursor: "pointer", fontSize: 12 }}>🗑️</button>
+                          <button onClick={() => setDeleteConfirmTrade(t)} style={{ width: 28, height: 28, borderRadius: 7, border: "none", background: C.redDim, color: C.red, cursor: "pointer", fontSize: 12 }}>🗑️</button>
                         </div>
                       )}
                     </tr>
@@ -2543,6 +2544,20 @@ function Journal({ state, dispatch, setPage }) {
             </table>
           </div>
         </Card>
+      )}
+      {deleteConfirmTrade && (
+        <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setDeleteConfirmTrade(null)}>
+          <div className="fade-in" onClick={e => e.stopPropagation()} style={{ background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24, width: "100%", maxWidth: 380 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>Delete this trade?</div>
+            <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 20, lineHeight: 1.6 }}>
+              Delete <b>{deleteConfirmTrade.symbol}</b> from {fmtDate(deleteConfirmTrade.date)}? This cannot be undone.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn small variant="danger" onClick={() => { dispatch({ type: "DELETE_TRADE", id: deleteConfirmTrade.id }); setDeleteConfirmTrade(null); }} style={{ flex: 1, justifyContent: "center" }}>Yes, Delete</Btn>
+              <Btn small variant="ghost" onClick={() => setDeleteConfirmTrade(null)} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
@@ -3164,6 +3179,7 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
   const { trades, activeAccount } = state;
   const [notes, setNotes] = useState(trade.notes || ""), [editNotes, setEditNotes] = useState(false), [showShare, setShowShare] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const saveNotes = () => { dispatch({ type: "UPDATE_TRADE", id: trade.id, data: { notes } }); setEditNotes(false); };
   const col = outcomeColor(trade.outcome, trade.pnl);
   const pool = trades.filter(t => activeAccount === "all" || t.account === activeAccount);
@@ -3214,8 +3230,23 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
         <Btn small variant="ghost" onClick={() => setShowShare(true)}>🔗 Share</Btn>
         <Btn small variant="ghost" onClick={() => dispatch({ type: "OPEN_MODAL", modal: { type: "add_trade", trade } })}>✏️ Edit</Btn>
         <CopyToAccountMenu trade={trade} state={state} dispatch={dispatch} />
-        <Btn small variant="danger" onClick={() => { dispatch({ type: "DELETE_TRADE", id: trade.id }); onBack(); }}>Delete</Btn>
+        <Btn small variant="danger" onClick={() => setShowDeleteConfirm(true)}>Delete</Btn>
       </div>
+
+      {showDeleteConfirm && (
+        <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setShowDeleteConfirm(false)}>
+          <div className="fade-in" onClick={e => e.stopPropagation()} style={{ background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24, width: "100%", maxWidth: 380 }}>
+            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 10 }}>Delete this trade?</div>
+            <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 20, lineHeight: 1.6 }}>
+              Delete <b>{trade.symbol}</b> from {fmtDate(trade.date)}? This cannot be undone.
+            </div>
+            <div style={{ display: "flex", gap: 10 }}>
+              <Btn small variant="danger" onClick={() => { dispatch({ type: "DELETE_TRADE", id: trade.id }); onBack(); }} style={{ flex: 1, justifyContent: "center" }}>Yes, Delete</Btn>
+              <Btn small variant="ghost" onClick={() => setShowDeleteConfirm(false)} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Stat strip */}
       <Card style={{ marginBottom: 16, padding: "16px 20px" }}>
