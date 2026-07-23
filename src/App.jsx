@@ -1429,8 +1429,8 @@ function AddTradeModal({ state, dispatch }) {
     outcomeNeutral: editing.postTradeState === "Detached" ? "Yes" : editing.postTradeState === "Attached" ? "No" : "",
   } : {
     entryDate: new Date().toISOString().slice(0, 10), exitDate: "",
-    symbol: "NQ", direction: "Long",
-    entry: "", exit: "", size: "1", pnl: "", pips: "", outcome: "",
+    symbol: "MGC", direction: "Long",
+    entry: "", exit: "", size: "", pnl: "", pips: "", outcome: "",
     setup: "", session: "", mood: "",
     timeframe: "", trendBias: "", risk: "",
     openTime: "", closeTime: "", fees: "", exitBehavior: "", outcomeNeutral: "",
@@ -2754,16 +2754,18 @@ const IMPORT_SOURCES = [
   { id: "custom", name: "Custom CSV Format", icon: "📄", iconBg: C.blueDim, iconColor: C.blue,
     desc: "Use your own CSV file format — we'll match common column names automatically.",
     tags: [{ label: "Flexible format", color: C.blue }] },
-];
+].map(s => s.id === "tradovate" ? s : { ...s, disabled: true });
 
 function ImportSourceCard({ src, onFile, busy }) {
   const fileRef = useRef();
+  const disabled = !!src.disabled;
   return (
-    <Card style={{ padding: 22, position: "relative", display: "flex", flexDirection: "column", gap: 14 }}>
-      {src.badge && <div style={{ position: "absolute", top: 16, right: 16, background: src.badgeColor, color: "#fff", fontSize: 9, fontWeight: 800, padding: "3px 10px", borderRadius: 20, letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 4 }}>✦ {src.badge}</div>}
+    <Card style={{ padding: 22, position: "relative", display: "flex", flexDirection: "column", gap: 14, opacity: disabled ? 0.5 : 1 }}>
+      {src.badge && !disabled && <div style={{ position: "absolute", top: 16, right: 16, background: src.badgeColor, color: "#fff", fontSize: 9, fontWeight: 800, padding: "3px 10px", borderRadius: 20, letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 4 }}>✦ {src.badge}</div>}
+      {disabled && <div style={{ position: "absolute", top: 16, right: 16, background: C.surfaceHigh, color: C.textMuted, fontSize: 9, fontWeight: 800, padding: "3px 10px", borderRadius: 20, letterSpacing: 0.5 }}>COMING SOON</div>}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
         <div style={{ width: 50, height: 50, borderRadius: 12, background: src.iconBg || C.surfaceHigh, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 18, fontWeight: 800, color: src.iconColor || C.text, border: `1px solid ${C.border}` }}>{src.icon}</div>
-        <button onClick={() => !busy && fileRef.current?.click()} disabled={busy} style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: C.surfaceHigh, color: src.iconColor || C.accent, cursor: busy ? "wait" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, flexShrink: 0 }}>{busy === src.id ? "…" : "→"}</button>
+        <button onClick={() => !disabled && !busy && fileRef.current?.click()} disabled={disabled || busy} style={{ width: 34, height: 34, borderRadius: 9, border: "none", background: C.surfaceHigh, color: disabled ? C.textDim : (src.iconColor || C.accent), cursor: disabled ? "not-allowed" : (busy ? "wait" : "pointer"), display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, flexShrink: 0 }}>{busy === src.id ? "…" : "→"}</button>
       </div>
       <div style={{ flex: 1 }}>
         <div style={{ fontWeight: 800, fontSize: 16, marginBottom: 8 }}>{src.name}</div>
@@ -2773,8 +2775,76 @@ function ImportSourceCard({ src, onFile, busy }) {
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
         {src.tags?.map(t => <Badge key={t.label} color={t.color}>{t.label}</Badge>)}
       </div>
-      <input ref={fileRef} type="file" accept=".csv,.xlsx,.xml,.txt" style={{ display: "none" }} onChange={e => { onFile(e.target.files[0], src); e.target.value = ""; }} />
+      {!disabled && <input ref={fileRef} type="file" accept=".csv,.xlsx,.xml,.txt" style={{ display: "none" }} onChange={e => { onFile(e.target.files[0], src); e.target.value = ""; }} />}
     </Card>
+  );
+}
+
+function ImportReview({ review, accounts, onCancel, onConfirm }) {
+  const { source, trades } = review;
+  const [accountId, setAccountId] = useState(accounts[0]?.id || "");
+  const [selected, setSelected] = useState(() => new Set(trades.map(t => t.id)));
+  const allSelected = selected.size === trades.length;
+  const toggle = (id) => setSelected(s => { const next = new Set(s); next.has(id) ? next.delete(id) : next.add(id); return next; });
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(trades.map(t => t.id)));
+  const selectedTrades = trades.filter(t => selected.has(t.id));
+  const netPnl = selectedTrades.reduce((s, t) => s + t.pnl, 0);
+
+  return (
+    <div className="fade-in" style={{ maxWidth: 1000, margin: "0 auto", width: "100%", display: "flex", flexDirection: "column", gap: 18 }}>
+      <Card style={{ padding: "16px 20px", display: "flex", flexWrap: "wrap", alignItems: "center", gap: 14 }}>
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>Review import from {source.name}</div>
+          <div style={{ fontSize: 12, color: C.textMuted, marginTop: 3 }}>{trades.length} trade{trades.length !== 1 ? "s" : ""} found · {selectedTrades.length} selected · net {fmt$(netPnl)}</div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ fontSize: 12, color: C.textMuted }}>Import into</span>
+          <select value={accountId} onChange={e => setAccountId(e.target.value)} style={{ background: C.surface, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, padding: "8px 12px", fontSize: 13, outline: "none" }}>
+            {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+          </select>
+        </div>
+      </Card>
+
+      <Card style={{ padding: 0, overflow: "hidden" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 14px", borderBottom: `1px solid ${C.border}` }}>
+          <input type="checkbox" checked={allSelected} onChange={toggleAll} style={{ width: 16, height: 16 }} />
+          <span style={{ fontSize: 12, color: C.textMuted, fontWeight: 700 }}>{allSelected ? "Deselect all" : "Select all"}</span>
+        </div>
+        <div style={{ maxHeight: 420, overflowY: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr>
+                <th style={{ width: 36 }}></th>
+                <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Date</th>
+                <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Symbol</th>
+                <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Direction</th>
+                <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Size</th>
+                <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: C.textMuted, fontWeight: 700 }}>P&L</th>
+              </tr>
+            </thead>
+            <tbody>
+              {trades.map((t, i) => (
+                <tr key={t.id} style={{ borderBottom: `1px solid ${C.border}30`, background: i % 2 ? C.bg + "60" : "transparent" }}>
+                  <td style={{ padding: "8px 12px" }}><input type="checkbox" checked={selected.has(t.id)} onChange={() => toggle(t.id)} style={{ width: 16, height: 16 }} /></td>
+                  <td style={{ padding: "8px 12px", fontSize: 13 }}>{fmtDate(t.date)} {t.openTime}</td>
+                  <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 700 }}>{t.symbol}</td>
+                  <td style={{ padding: "8px 12px" }}><Badge color={t.direction === "Long" ? C.accent : C.red}>{t.direction === "Long" ? "♤ LONG" : "♤ SHORT"}</Badge></td>
+                  <td style={{ padding: "8px 12px", fontSize: 13 }}>{t.size}</td>
+                  <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 700, color: t.pnl > 0 ? C.accent : t.pnl < 0 ? C.red : C.textMuted }}>{fmt$(t.pnl)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>
+        <Btn variant="gradient" onClick={() => onConfirm(selectedTrades, accountId)} disabled={!selectedTrades.length || !accountId}>
+          Import {selectedTrades.length} Trade{selectedTrades.length !== 1 ? "s" : ""}
+        </Btn>
+      </div>
+    </div>
   );
 }
 
@@ -2782,6 +2852,7 @@ function ImportTrades({ state, dispatch, setPage }) {
   const { accounts } = state;
   const [toast, setToast] = useState("");
   const [busy, setBusy] = useState(null);
+  const [review, setReview] = useState(null); // { source, trades } — parsed trades awaiting account + selection
   const notify = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3800); };
 
   const handleFile = (file, src) => {
@@ -2792,12 +2863,10 @@ function ImportTrades({ state, dispatch, setPage }) {
       setBusy(null);
       try {
         const trades = src.id === "tradovate"
-          ? parseTradovateCSV(e.target.result, accounts[0]?.id || "")
-          : parseGenericCSV(e.target.result, accounts[0]?.id || "");
+          ? parseTradovateCSV(e.target.result, "")
+          : parseGenericCSV(e.target.result, "");
         if (!trades.length) { notify(`Couldn't find any trades in that file. Double-check it's a ${src.name} export.`); return; }
-        trades.forEach(t => dispatch({ type: "ADD_TRADE", trade: t }));
-        notify(`✓ Imported ${trades.length} trade${trades.length !== 1 ? "s" : ""} from ${src.name}.`);
-        setTimeout(() => setPage && setPage("journal"), 1000);
+        setReview({ source: src, trades });
       } catch {
         notify("Something went wrong reading that file. Try the Custom CSV Format option.");
       }
@@ -2806,20 +2875,34 @@ function ImportTrades({ state, dispatch, setPage }) {
     reader.readAsText(file);
   };
 
+  const confirmImport = (selectedTrades, accountId) => {
+    selectedTrades.forEach(t => dispatch({ type: "ADD_TRADE", trade: { ...t, account: accountId } }));
+    const src = review.source;
+    setReview(null);
+    notify(`✓ Imported ${selectedTrades.length} trade${selectedTrades.length !== 1 ? "s" : ""} from ${src.name}.`);
+    setTimeout(() => setPage && setPage("journal"), 1000);
+  };
+
   return (
     <div className="fade-in" style={{ height: "100%", overflowY: "auto", padding: 28, display: "flex", flexDirection: "column", gap: 24 }}>
       <div style={{ textAlign: "center", maxWidth: 640, margin: "0 auto" }}>
         <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: -1, marginBottom: 8, color: C.accent }}>Import Your Trades</h1>
-        <div style={{ fontSize: 14, color: C.textMuted }}>Choose your import method and upload your trading data</div>
+        <div style={{ fontSize: 14, color: C.textMuted }}>{review ? "Pick which trades to bring in and where they go" : "Choose your import method and upload your trading data"}</div>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: "0 auto", width: "100%", background: C.yellowDim, border: `1px solid ${C.yellow}40`, borderRadius: 12, padding: "14px 18px", fontSize: 13, color: C.yellow, display: "flex", alignItems: "center", gap: 10 }}>
-        ⚠ Imported trades are added to <b>{accounts[0]?.name || "your account"}</b> and can be reassigned any time from the Trades page.
-      </div>
+      {review ? (
+        <ImportReview review={review} accounts={accounts} onCancel={() => setReview(null)} onConfirm={confirmImport} />
+      ) : (
+        <>
+          <div style={{ maxWidth: 1200, margin: "0 auto", width: "100%", background: C.yellowDim, border: `1px solid ${C.yellow}40`, borderRadius: 12, padding: "14px 18px", fontSize: 13, color: C.yellow, display: "flex", alignItems: "center", gap: 10 }}>
+            ⚠ After upload, you'll be able to choose which trades to import and which account to import them into.
+          </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 18, maxWidth: 1200, margin: "0 auto", width: "100%" }}>
-        {IMPORT_SOURCES.map(src => <ImportSourceCard key={src.id} src={src} onFile={handleFile} busy={busy} />)}
-      </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: 18, maxWidth: 1200, margin: "0 auto", width: "100%" }}>
+            {IMPORT_SOURCES.map(src => <ImportSourceCard key={src.id} src={src} onFile={handleFile} busy={busy} />)}
+          </div>
+        </>
+      )}
 
       {toast && <div className="fade-in" style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: C.surfaceHigh, border: `1px solid ${C.border}`, borderRadius: 10, padding: "12px 20px", fontSize: 13, fontWeight: 600, color: C.text, boxShadow: "0 8px 24px #0008", zIndex: 400, maxWidth: "90vw", textAlign: "center" }}>{toast}</div>}
     </div>
