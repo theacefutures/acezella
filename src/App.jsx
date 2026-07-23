@@ -680,6 +680,11 @@ function reducer(state, action) {
   switch (action.type) {
     case "LOGIN": next = { ...state, currentUser: action.user, modal: "welcome" }; break;
     case "LOGOUT": next = { ...state, currentUser: null }; break;
+    // Wipes every trade, account, note, strategy, prop firm, payout, and
+    // capital transaction — resets to the same zero-state a brand-new
+    // signup gets (see blankState()) — but keeps the person logged in on
+    // their same user record rather than sending them back to auth.
+    case "CLEAR_ALL_DATA": next = { ...blankState(), currentUser: state.currentUser, modal: null }; break;
     case "REGISTER": next = { ...blankState(), users: [...state.users, action.user], currentUser: action.user, modal: "welcome" }; break;
     case "SET_ACTIVE_ACCOUNT": next = { ...state, activeAccount: action.id }; break;
     case "ADD_TRADE": next = { ...state, trades: [action.trade, ...state.trades] }; break;
@@ -1429,8 +1434,8 @@ function AddTradeModal({ state, dispatch }) {
     outcomeNeutral: editing.postTradeState === "Detached" ? "Yes" : editing.postTradeState === "Attached" ? "No" : "",
   } : {
     entryDate: new Date().toISOString().slice(0, 10), exitDate: "",
-    symbol: "MGC", direction: "Long",
-    entry: "", exit: "", size: "", pnl: "", pips: "", outcome: "",
+    symbol: "NQ", direction: "Long",
+    entry: "", exit: "", size: "1", pnl: "", pips: "", outcome: "",
     setup: "", session: "", mood: "",
     timeframe: "", trendBias: "", risk: "",
     openTime: "", closeTime: "", fees: "", exitBehavior: "", outcomeNeutral: "",
@@ -6285,7 +6290,7 @@ function Settings({ state, dispatch }) {
   const [editAccName, setEditAccName] = useState(""), [editAccType, setEditAccType] = useState("Funded"), [editAccColor, setEditAccColor] = useState(ACCOUNT_COLORS[0]);
   const [newSession, setNewSession] = useState(""), [newEmotion, setNewEmotion] = useState("");
   const [siteNameInput, setSiteNameInput] = useState(state.siteName || "ACEZELLA");
-  const [confirmAction, setConfirmAction] = useState(null); // { message, onConfirm }
+  const [clearAllConfirm, setClearAllConfirm] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [toast, setToast] = useState("");
   const fileRef = useRef();
@@ -6704,22 +6709,23 @@ function Settings({ state, dispatch }) {
       {/* Danger Zone */}
       <Card style={{ borderColor: C.red + "44" }}>
         <SectionLabel>Danger Zone</SectionLabel>
-        <Btn variant="danger" onClick={() => setConfirmAction({ message: "Delete ALL your data? This cannot be undone.", onConfirm: () => { localStorage.removeItem("acezella_v3"); window.location.reload(); } })}>🗑 Clear All Data</Btn>
-      </Card>
-
-      {/* Custom confirm modal (window.confirm is blocked in this sandboxed preview) */}
-      {confirmAction && (
-        <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 300, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={e => e.target === e.currentTarget && setConfirmAction(null)}>
-          <div className="fade-in" style={{ background: C.modalBg, border: `1px solid ${C.red}44`, borderRadius: 16, padding: 26, width: "100%", maxWidth: 400 }}>
-            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Are you sure?</div>
-            <div style={{ fontSize: 14, color: C.textMuted, marginBottom: 22, lineHeight: 1.6 }}>{confirmAction.message}</div>
-            <div style={{ display: "flex", gap: 10 }}>
-              <Btn variant="danger" style={{ flex: 1, justifyContent: "center" }} onClick={() => { confirmAction.onConfirm(); setConfirmAction(null); }}>Delete</Btn>
-              <Btn variant="ghost" style={{ flex: 1, justifyContent: "center" }} onClick={() => setConfirmAction(null)}>Cancel</Btn>
+        {clearAllConfirm ? (
+          <div className="fade-in" style={{ background: C.redDim, border: `1px solid ${C.red}55`, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+              <span style={{ fontSize: 16, color: C.red, flexShrink: 0 }}>⚠</span>
+              <div style={{ flex: 1, fontSize: 13, color: C.text, lineHeight: 1.5 }}>
+                Delete <b>all</b> your data — every trade, account, strategy, prop firm, payout, and note? This cannot be undone. You'll start fresh, as if you just signed up.
+              </div>
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn small variant="danger" onClick={() => { dispatch({ type: "CLEAR_ALL_DATA" }); setClearAllConfirm(false); }} style={{ flex: 1, justifyContent: "center" }}>Yes, Delete Everything</Btn>
+              <Btn small variant="ghost" onClick={() => setClearAllConfirm(false)} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
             </div>
           </div>
-        </div>
-      )}
+        ) : (
+          <Btn variant="danger" onClick={() => setClearAllConfirm(true)}>🗑 Clear All Data</Btn>
+        )}
+      </Card>
 
       {/* Toast (replaces alert(), which is also blocked in this sandbox) */}
       {toast && (
