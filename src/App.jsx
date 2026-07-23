@@ -479,7 +479,7 @@ async function fetchSharedTrade(id) {
 }
 
 function genDemoData() {
-  const symbols = ["NQ", "ES", "GC", "CL", "MNQ", "MES"];
+  const symbols = ["MGC", "ES", "GC", "CL", "MMGC", "MES"];
   const setups = ["Celery", "Breakout", "Onion", "Fade", "Inverted Celery"];
   const sessions = ["Asian", "London", "New York"];
   const moods = ["Focus", "Fear", "Greed", "Anger"];
@@ -537,7 +537,7 @@ function defaultState() {
       { id: "s4", name: "Fade", color: C.red, description: "Buy or sell at pullback level", rules: ["Identify overextension", "Wait for reversal signal", "Enter against the move"] },
       { id: "s5", name: "Inverted Celery", color: "#9b6bff", description: "Buy or sell at pullback level", rules: ["Confirm bias on higher TF", "Wait for confirmation candle", "Enter on retest"] },
     ],
-    sessions: ["Asian", "London", "New York"],
+    sessions: ["Asian Session", "Pre-London", "London Session", "Pre-NY", "NY Open", "London/NY Overlap", "NYSE Open", "NY Close", "Sydney/Asian Pre"],
     emotions: ["Focus", "Fear", "Greed", "Anger"],
     referenceListsSchemaVersion: REFERENCE_LISTS_SCHEMA_VERSION,
     accountsSchemaVersion: ACCOUNTS_SCHEMA_VERSION,
@@ -630,7 +630,9 @@ const THEME_SCHEMA_VERSION = 2;
 // actually-logged trades are never touched — only a pristine, untouched
 // demo dataset (recognized by its short sequential ids, e.g. "t0", "t1" —
 // real trades get a timestamp id like "t1751462400123") gets refreshed.
-const REFERENCE_LISTS_SCHEMA_VERSION = 3;
+// v4: expanded the default sessions list from 3 (Asian/London/New York) to
+// the full 9-band breakdown already used by the header's live session clock.
+const REFERENCE_LISTS_SCHEMA_VERSION = 4;
 
 // Bump this whenever the *default* accounts list changes, so returning users
 // still sitting on the old two-account "Pipstone 100K Funded / Pipstone BOGO"
@@ -1434,8 +1436,8 @@ function AddTradeModal({ state, dispatch }) {
     outcomeNeutral: editing.postTradeState === "Detached" ? "Yes" : editing.postTradeState === "Attached" ? "No" : "",
   } : {
     entryDate: new Date().toISOString().slice(0, 10), exitDate: "",
-    symbol: "", direction: "Long",
-    entry: "", exit: "", size: "", pnl: "", pips: "", outcome: "",
+    symbol: "MGC", direction: "Long",
+    entry: "", exit: "", size: "1", pnl: "", pips: "", outcome: "",
     setup: "", session: "", mood: "",
     timeframe: "", trendBias: "", risk: "",
     openTime: "", closeTime: "", fees: "", exitBehavior: "", outcomeNeutral: "",
@@ -1568,7 +1570,7 @@ function AddTradeModal({ state, dispatch }) {
             </div>
           </ModalField>
           <ModalField label="Symbol" sub="*">
-            <input value={form.symbol} onChange={e => set("symbol")(e.target.value.toUpperCase())} placeholder="NQ, ES, GC…" style={modalInputStyle} />
+            <input value={form.symbol} onChange={e => set("symbol")(e.target.value.toUpperCase())} placeholder="MGC, ES, GC…" style={modalInputStyle} />
           </ModalField>
         </div>
 
@@ -2713,7 +2715,7 @@ function parseTradovateCSV(text, accountId) {
       size: qty,
       pnl,
       pips: 0,
-      setup: "", session: "", mood: "", timeframe: "",
+      setup: "", session: getTradingSession(openDate).label, mood: "", timeframe: "",
       openTime: `${pad(openDate.getHours())}:${pad(openDate.getMinutes())}`,
       closeTime: `${pad(closeDate.getHours())}:${pad(closeDate.getMinutes())}`,
       fees: 0,
@@ -2735,8 +2737,8 @@ const IMPORT_SOURCES = [
     tags: [{ label: "Auto-mapping", color: C.accent }, { label: "Duplicate Detection", color: C.accent }] },
   { id: "tradovate", name: "Tradovate CSV", icon: "TV", iconBg: C.blueDim, iconColor: C.blue,
     desc: "Import trades from Tradovate Performance Reports.",
-    note: "Automatically merges split fills executed on the same order into one trade.",
-    tags: [{ label: "Auto-mapping", color: C.blue }, { label: "P&L included", color: C.blue }, { label: "Merges Split Fills", color: C.blue }] },
+    note: "Automatically merges split fills executed on the same order into one trade, and tags each trade with the session it was traded in based on its time.",
+    tags: [{ label: "Auto-mapping", color: C.blue }, { label: "P&L included", color: C.blue }, { label: "Merges Split Fills", color: C.blue }, { label: "Auto Session Detection", color: C.blue }] },
   { id: "tradingview", name: "TradingView CSV", badge: "AI-POWERED", badgeColor: C.purple, icon: "▲", iconBg: "#00000022", iconColor: C.text,
     desc: "Import trades from TradingView. Reconstructs accurate trades with real P&L.",
     tags: [{ label: "AI Trade Pairing", color: C.purple }, { label: "All Markets", color: C.blue }] },
@@ -2823,6 +2825,7 @@ function ImportReview({ review, accounts, onCancel, onConfirm }) {
                 <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Date</th>
                 <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Symbol</th>
                 <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Direction</th>
+                <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Session</th>
                 <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: C.textMuted, fontWeight: 700 }}>Size</th>
                 <th style={{ textAlign: "left", padding: "8px 12px", fontSize: 11, color: C.textMuted, fontWeight: 700 }}>P&L</th>
               </tr>
@@ -2834,6 +2837,7 @@ function ImportReview({ review, accounts, onCancel, onConfirm }) {
                   <td style={{ padding: "8px 12px", fontSize: 13 }}>{fmtDate(t.date)} {t.openTime}</td>
                   <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 700 }}>{t.symbol}</td>
                   <td style={{ padding: "8px 12px" }}><Badge color={t.direction === "Long" ? C.accent : C.red}>{t.direction === "Long" ? "♤ LONG" : "♤ SHORT"}</Badge></td>
+                  <td style={{ padding: "8px 12px" }}>{t.session ? <Badge color={hashColor(t.session)}>{t.session}</Badge> : "—"}</td>
                   <td style={{ padding: "8px 12px", fontSize: 13 }}>{t.size}</td>
                   <td style={{ padding: "8px 12px", fontSize: 13, fontWeight: 700, color: t.pnl > 0 ? C.accent : t.pnl < 0 ? C.red : C.textMuted }}>{fmt$(t.pnl)}</td>
                 </tr>
