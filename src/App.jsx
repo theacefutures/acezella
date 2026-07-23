@@ -2607,6 +2607,119 @@ function parseGenericCSV(text, accountId) {
   return trades;
 }
 
+// ─── TRADOVATE CSV PARSER ─────────────────────────────────────────────────
+// Tradovate's "Performance" export lists one row per matched buy/sell fill
+// pair: symbol, buyFillId, sellFillId, qty, buyPrice, sellPrice, pnl,
+// boughtTimestamp, soldTimestamp, duration. Two quirks this parser handles
+// that the generic column-matching parser above can't:
+//  1) pnl is printed in accounting format — "$18.00" for a gain, "$(86.00)"
+//     for a loss — so a wrapping "(...)" means negative, not just a minus sign.
+//  2) When one order fills in pieces against multiple opposing orders,
+//     Tradovate prints a separate row per fill-pair, but they're really one
+//     trade. Those split rows always share either their bought timestamp or
+//     their sold timestamp (down to the second) with each other, so we group
+//     rows on that basis for the same symbol, summing size/pnl and
+//     volume-weighting the average buy/sell price across the group.
+function parseTradovateCSV(text, accountId) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim().length);
+  if (lines.length < 2) return [];
+  const splitRow = line => (line.match(/(".*?"|[^,]+)/g) || []).map(v => v.replace(/^"|"$/g, "").trim());
+  const headers = splitRow(lines[0]).map(h => h.toLowerCase());
+  const idx = name => headers.indexOf(name.toLowerCase());
+
+  const parseMoney = (str) => {
+    if (!str) return 0;
+    let s = str.trim();
+    let neg = false;
+    if (/^\$?\(.*\)$/.test(s)) { neg = true; s = s.replace(/^\$?\(/, "").replace(/\)$/, ""); }
+    s = s.replace(/[$,]/g, "");
+    const n = parseFloat(s) || 0;
+    return neg ? -Math.abs(n) : n;
+  };
+  const parseTS = (str) => {
+    const m = (str || "").trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2}):(\d{2})/);
+    if (!m) return new Date(str || Date.now());
+    const mo = +m[1], da = +m[2], yr = +m[3], h = +m[4], mi = +m[5], se = +m[6];
+    return new Date(yr, mo - 1, da, h, mi, se);
+  };
+
+  const iSymbol = idx("symbol"), iQty = idx("qty"), iBuyPx = idx("buyprice"), iSellPx = idx("sellprice"),
+        iPnl = idx("pnl"), iBought = idx("boughttimestamp"), iSold = idx("soldtimestamp");
+
+  const rows = lines.slice(1).map(line => {
+    const v = splitRow(line);
+    const bought = parseTS(v[iBought]);
+    const sold = parseTS(v[iSold]);
+    // Whichever side (buy or sell) happened first is the entry — if you
+    // bought before you sold, you went Long; if you sold before you
+    // bought back, you went Short.
+    const isLong = bought.getTime() <= sold.getTime();
+    return {
+      symbol: v[iSymbol] || "?",
+      qty: parseInt(v[iQty]) || 1,
+      buyPrice: parseFloat(v[iBuyPx]) || 0,
+      sellPrice: parseFloat(v[iSellPx]) || 0,
+      pnl: parseMoney(v[iPnl]),
+      bought, sold,
+      direction: isLong ? "Long" : "Short",
+      open: isLong ? bought : sold,
+      close: isLong ? sold : bought,
+    };
+  }).filter(r => r.symbol && r.symbol !== "?");
+
+  // Union rows into trade groups: two rows belong together if they share a
+  // symbol + bought timestamp, or a symbol + sold timestamp.
+  const keyToGroup = new Map();
+  const groupOf = [];
+  let nextId = 0;
+  rows.forEach((r, i) => {
+    const bKey = `B|${r.symbol}|${r.bought.getTime()}`;
+    const sKey = `S|${r.symbol}|${r.sold.getTime()}`;
+    let gid = keyToGroup.has(bKey) ? keyToGroup.get(bKey) : keyToGroup.has(sKey) ? keyToGroup.get(sKey) : nextId++;
+    keyToGroup.set(bKey, gid);
+    keyToGroup.set(sKey, gid);
+    groupOf[i] = gid;
+  });
+  const groups = new Map();
+  rows.forEach((r, i) => {
+    const gid = groupOf[i];
+    if (!groups.has(gid)) groups.set(gid, []);
+    groups.get(gid).push(r);
+  });
+
+  const pad = n => String(n).padStart(2, "0");
+  const trades = [...groups.values()].map((grp, i) => {
+    const symbol = grp[0].symbol;
+    const direction = grp[0].direction;
+    const qty = grp.reduce((s, r) => s + r.qty, 0) || 1;
+    const pnl = +grp.reduce((s, r) => s + r.pnl, 0).toFixed(2);
+    const buyAvg = grp.reduce((s, r) => s + r.buyPrice * r.qty, 0) / qty;
+    const sellAvg = grp.reduce((s, r) => s + r.sellPrice * r.qty, 0) / qty;
+    const openDate = new Date(Math.min(...grp.map(r => r.open.getTime())));
+    const closeDate = new Date(Math.max(...grp.map(r => r.close.getTime())));
+    return {
+      id: `t_import_${Date.now()}_${i}`,
+      date: openDate.toISOString(),
+      symbol,
+      direction,
+      outcome: pnl > 0 ? "Win" : pnl < 0 ? "Loss" : "BE",
+      entry: +(direction === "Long" ? buyAvg : sellAvg).toFixed(4),
+      exit: +(direction === "Long" ? sellAvg : buyAvg).toFixed(4),
+      size: qty,
+      pnl,
+      pips: 0,
+      setup: "", session: "", mood: "", timeframe: "",
+      openTime: `${pad(openDate.getHours())}:${pad(openDate.getMinutes())}`,
+      closeTime: `${pad(closeDate.getHours())}:${pad(closeDate.getMinutes())}`,
+      fees: 0,
+      notes: "",
+      account: accountId,
+      screenshots: [], tags: [],
+    };
+  });
+  return trades;
+}
+
 const IMPORT_SOURCES = [
   { id: "any", name: "Any Broker (AI)", badge: "AI-POWERED", badgeColor: C.purple, icon: "✨", iconBg: C.purpleDim, iconColor: C.purple,
     desc: "Upload from any broker or prop firm. Our importer auto-detects your columns and builds your journal.",
@@ -2616,8 +2729,9 @@ const IMPORT_SOURCES = [
     desc: "Import trades directly from TopStepX platform exports.",
     tags: [{ label: "Auto-mapping", color: C.accent }, { label: "Duplicate Detection", color: C.accent }] },
   { id: "tradovate", name: "Tradovate CSV", icon: "TV", iconBg: C.blueDim, iconColor: C.blue,
-    desc: "Import trades from Tradovate Account Reports.",
-    tags: [{ label: "Auto-mapping", color: C.blue }, { label: "P&L included", color: C.blue }] },
+    desc: "Import trades from Tradovate Performance Reports.",
+    note: "Automatically merges split fills executed on the same order into one trade.",
+    tags: [{ label: "Auto-mapping", color: C.blue }, { label: "P&L included", color: C.blue }, { label: "Merges Split Fills", color: C.blue }] },
   { id: "tradingview", name: "TradingView CSV", badge: "AI-POWERED", badgeColor: C.purple, icon: "▲", iconBg: "#00000022", iconColor: C.text,
     desc: "Import trades from TradingView. Reconstructs accurate trades with real P&L.",
     tags: [{ label: "AI Trade Pairing", color: C.purple }, { label: "All Markets", color: C.blue }] },
@@ -2677,7 +2791,9 @@ function ImportTrades({ state, dispatch, setPage }) {
     reader.onload = e => {
       setBusy(null);
       try {
-        const trades = parseGenericCSV(e.target.result, accounts[0]?.id || "");
+        const trades = src.id === "tradovate"
+          ? parseTradovateCSV(e.target.result, accounts[0]?.id || "")
+          : parseGenericCSV(e.target.result, accounts[0]?.id || "");
         if (!trades.length) { notify(`Couldn't find any trades in that file. Double-check it's a ${src.name} export.`); return; }
         trades.forEach(t => dispatch({ type: "ADD_TRADE", trade: t }));
         notify(`✓ Imported ${trades.length} trade${trades.length !== 1 ? "s" : ""} from ${src.name}.`);
