@@ -1434,8 +1434,8 @@ function AddTradeModal({ state, dispatch }) {
     outcomeNeutral: editing.postTradeState === "Detached" ? "Yes" : editing.postTradeState === "Attached" ? "No" : "",
   } : {
     entryDate: new Date().toISOString().slice(0, 10), exitDate: "",
-    symbol: "NQ", direction: "Long",
-    entry: "", exit: "", size: "1", pnl: "", pips: "", outcome: "",
+    symbol: "", direction: "Long",
+    entry: "", exit: "", size: "", pnl: "", pips: "", outcome: "",
     setup: "", session: "", mood: "",
     timeframe: "", trendBias: "", risk: "",
     openTime: "", closeTime: "", fees: "", exitBehavior: "", outcomeNeutral: "",
