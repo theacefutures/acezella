@@ -682,6 +682,7 @@ function reducer(state, action) {
   switch (action.type) {
     case "LOGIN": next = { ...state, currentUser: action.user, modal: "welcome" }; break;
     case "LOGOUT": next = { ...state, currentUser: null }; break;
+    case "SET_USER_NAME": next = { ...state, currentUser: { ...state.currentUser, name: action.name } }; break;
     // Wipes every trade, account, note, strategy, prop firm, payout, and
     // capital transaction — resets to the same zero-state a brand-new
     // signup gets (see blankState()) — but keeps the person logged in on
@@ -6468,6 +6469,9 @@ function Settings({ state, dispatch }) {
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [toast, setToast] = useState("");
+  const [displayNameInput, setDisplayNameInput] = useState(state.currentUser?.name || "");
+  const [newPassword, setNewPassword] = useState(""), [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordError, setPasswordError] = useState(""), [savingPassword, setSavingPassword] = useState(false);
   const fileRef = useRef();
   const watermarkRef = useRef();
   const notify = (msg) => { setToast(msg); setTimeout(() => setToast(""), 3000); };
@@ -6477,6 +6481,27 @@ function Settings({ state, dispatch }) {
     if (!canAddAccount(state)) { dispatch({ type: "OPEN_MODAL", modal: "upgrade" }); return; }
     dispatch({ type: "ADD_ACCOUNT", account: { id: `acc${Date.now()}`, name: newAccName, type: newAccType, color: newAccColor } });
     setNewAccName(""); setNewAccType("Funded");
+  };
+
+  const saveDisplayName = async () => {
+    const name = displayNameInput.trim();
+    if (!name) return;
+    const { error } = await supabase.auth.updateUser({ data: { name } });
+    if (error) { notify("Couldn't update name. Try again."); return; }
+    dispatch({ type: "SET_USER_NAME", name });
+    notify("✓ Display name updated.");
+  };
+
+  const updatePassword = async () => {
+    setPasswordError("");
+    if (newPassword.length < 6) { setPasswordError("Password must be at least 6 characters."); return; }
+    if (newPassword !== confirmPassword) { setPasswordError("Passwords don't match."); return; }
+    setSavingPassword(true);
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    setSavingPassword(false);
+    if (error) { setPasswordError(error.message || "Couldn't update password. Try again."); return; }
+    setNewPassword(""); setConfirmPassword("");
+    notify("✓ Password updated.");
   };
 
   const theme = state.theme || { name: "Original", mode: "night" };
@@ -6571,6 +6596,125 @@ function Settings({ state, dispatch }) {
           </div>
           <Btn variant={isPlus(state) ? "ghost" : "gradient"} onClick={() => dispatch({ type: "OPEN_MODAL", modal: "upgrade" })}>{isPlus(state) ? "Manage Plan" : "✨ Upgrade to AcePlus"}</Btn>
         </div>
+      </Card>
+
+      {/* Account */}
+      <Card>
+        <SectionLabel>Account</SectionLabel>
+        <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 16 }}>Your display name and email. Email is used to sign in and can't be changed here.</div>
+        <div style={{ marginBottom: 16 }}>
+          <label style={{ fontSize: 11, color: C.textDim, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 6 }}>Email</label>
+          <div style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px", fontSize: 14, color: C.textMuted, maxWidth: 460 }}>{state.currentUser?.email || "—"}</div>
+        </div>
+        <div style={{ display: "flex", gap: 10, alignItems: "end", flexWrap: "wrap", marginBottom: 18 }}>
+          <Inp label="Display Name" value={displayNameInput} onChange={setDisplayNameInput} placeholder="Your name" style={{ maxWidth: 300 }} />
+          <Btn onClick={saveDisplayName} disabled={!displayNameInput.trim() || displayNameInput.trim() === state.currentUser?.name}>Save</Btn>
+        </div>
+
+        <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 18 }}>
+          <SectionLabel>Change Password</SectionLabel>
+          <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 14 }}>Choose a new password for your account (min. 6 characters).</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 320 }}>
+            <Inp label="New Password" type="password" value={newPassword} onChange={setNewPassword} placeholder="••••••••" />
+            <Inp label="Confirm New Password" type="password" value={confirmPassword} onChange={setConfirmPassword} placeholder="••••••••" />
+            {passwordError && <div style={{ fontSize: 12, color: C.red }}>{passwordError}</div>}
+            <Btn onClick={updatePassword} disabled={savingPassword || !newPassword || !confirmPassword} style={{ alignSelf: "flex-start" }}>{savingPassword ? "Updating…" : "Update Password"}</Btn>
+          </div>
+        </div>
+      </Card>
+
+      {/* Accounts */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
+          <div style={{ flex: 1 }}><SectionLabel>Accounts</SectionLabel></div>
+          {!isPlus(state) && <Badge color={C.purple}>{accounts.length}/{FREE_LIMITS.maxAccounts} (Ace Basic)</Badge>}
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
+          {accounts.map(a => {
+            const isEditing = editingAccId === a.id;
+            const isDeleting = deleteConfirmId === a.id;
+            const tradeCount = state.trades.filter(t => t.account === a.id).length;
+
+            const startEdit = () => {
+              setEditAccName(a.name); setEditAccType(a.type); setEditAccColor(a.color);
+              setEditingAccId(a.id);
+            };
+            const saveEdit = () => {
+              const name = editAccName.trim();
+              if (!name) return;
+              dispatch({ type: "UPDATE_ACCOUNT", id: a.id, data: { name, type: editAccType, color: editAccColor } });
+              setEditingAccId(null);
+            };
+
+            if (isEditing) {
+              return (
+                <div key={a.id} className="fade-in" style={{ background: C.surfaceHigh, border: `1px solid ${C.accent}55`, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
+                    <Inp label="Account Name" value={editAccName} onChange={setEditAccName} placeholder="e.g. FTMO 100K Funded" />
+                    <Sel label="Type" value={editAccType} onChange={setEditAccType} options={["Funded", "Combine", "Live", "Demo"]} />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 6 }}>Color</label>
+                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                      {ACCOUNT_COLORS.map(col => (
+                        <div key={col} onClick={() => setEditAccColor(col)} style={{ width: 24, height: 24, borderRadius: "50%", background: col, cursor: "pointer", border: editAccColor === col ? "3px solid #fff" : "3px solid transparent", transition: "border 0.1s" }} />
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn small onClick={saveEdit} disabled={!editAccName.trim()}>Save Changes</Btn>
+                    <Btn small variant="ghost" onClick={() => setEditingAccId(null)}>Cancel</Btn>
+                  </div>
+                </div>
+              );
+            }
+
+            if (isDeleting) {
+              return (
+                <div key={a.id} className="fade-in" style={{ background: C.redDim, border: `1px solid ${C.red}55`, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
+                  <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                    <span style={{ fontSize: 16, color: C.red, flexShrink: 0 }}>⚠</span>
+                    <div style={{ flex: 1, fontSize: 13, color: C.text, lineHeight: 1.5 }}>
+                      Delete <b>"{a.name}"</b>{tradeCount > 0 ? <> and its <b>{tradeCount} trade{tradeCount !== 1 ? "s" : ""}</b></> : ""}? This cannot be undone.
+                    </div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <Btn small variant="danger" onClick={() => { dispatch({ type: "DELETE_ACCOUNT", id: a.id }); setDeleteConfirmId(null); }} style={{ flex: 1, justifyContent: "center" }}>Yes, Delete</Btn>
+                    <Btn small variant="ghost" onClick={() => setDeleteConfirmId(null)} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
+                  </div>
+                </div>
+              );
+            }
+
+            return (
+              <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: C.surfaceHigh, borderRadius: 10 }}>
+                <div style={{ width: 10, height: 10, borderRadius: "50%", background: a.color, flexShrink: 0 }} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
+                  <div style={{ fontSize: 11, color: C.textMuted }}>{a.type}</div>
+                </div>
+                <Badge color={a.color}>{calcStats(state.trades.filter(t => t.account === a.id)).netPnl >= 0 ? "+" : ""}{calcStats(state.trades.filter(t => t.account === a.id)).netPnl.toFixed(2)}</Badge>
+                <button onClick={startEdit} style={{ background: C.blueDim, border: "none", borderRadius: 7, color: C.blue, padding: "5px 10px", cursor: "pointer", fontSize: 12, flexShrink: 0 }}>Edit</button>
+                <button onClick={() => setDeleteConfirmId(a.id)} style={{ background: C.redDim, border: "none", borderRadius: 7, color: C.red, padding: "5px 10px", cursor: "pointer", fontSize: 12, flexShrink: 0 }}>Delete</button>
+              </div>
+            );
+          })}
+        </div>
+        {canAddAccount(state) ? (
+          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
+            <Inp label="Account Name" value={newAccName} onChange={setNewAccName} placeholder="e.g. FTMO 100K Funded" />
+            <Sel label="Type" value={newAccType} onChange={setNewAccType} options={["Funded", "Combine", "Live", "Demo"]} />
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Color</label>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {ACCOUNT_COLORS.map(col => <div key={col} onClick={() => setNewAccColor(col)} style={{ width: 24, height: 24, borderRadius: "50%", background: col, cursor: "pointer", border: newAccColor === col ? `3px solid #fff` : "3px solid transparent", transition: "border 0.1s" }} />)}
+              </div>
+            </div>
+            <Btn onClick={addAccount}>Add Account</Btn>
+          </div>
+        ) : (
+          <InlineUpgradeLock dispatch={dispatch} text={`Ace Basic supports ${FREE_LIMITS.maxAccounts} account. Upgrade to AcePlus to add unlimited accounts.`} />
+        )}
       </Card>
 
       {/* Appearance */}
@@ -6701,99 +6845,6 @@ function Settings({ state, dispatch }) {
         )}
       </Card>
 
-     {/* Accounts */}
-<Card>
-  <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
-    <div style={{ flex: 1 }}><SectionLabel>Accounts</SectionLabel></div>
-    {!isPlus(state) && <Badge color={C.purple}>{accounts.length}/{FREE_LIMITS.maxAccounts} (Ace Basic)</Badge>}
-  </div>
-  <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 16 }}>
-    {accounts.map(a => {
-      const isEditing = editingAccId === a.id;
-      const isDeleting = deleteConfirmId === a.id;
-      const tradeCount = state.trades.filter(t => t.account === a.id).length;
-
-      const startEdit = () => {
-        setEditAccName(a.name); setEditAccType(a.type); setEditAccColor(a.color);
-        setEditingAccId(a.id);
-      };
-      const saveEdit = () => {
-        const name = editAccName.trim();
-        if (!name) return;
-        dispatch({ type: "UPDATE_ACCOUNT", id: a.id, data: { name, type: editAccType, color: editAccColor } });
-        setEditingAccId(null);
-      };
-
-      if (isEditing) {
-        return (
-          <div key={a.id} className="fade-in" style={{ background: C.surfaceHigh, border: `1px solid ${C.accent}55`, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
-            <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 10 }}>
-              <Inp label="Account Name" value={editAccName} onChange={setEditAccName} placeholder="e.g. FTMO 100K Funded" />
-              <Sel label="Type" value={editAccType} onChange={setEditAccType} options={["Funded", "Combine", "Live", "Demo"]} />
-            </div>
-            <div>
-              <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 6 }}>Color</label>
-              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {ACCOUNT_COLORS.map(col => (
-                  <div key={col} onClick={() => setEditAccColor(col)} style={{ width: 24, height: 24, borderRadius: "50%", background: col, cursor: "pointer", border: editAccColor === col ? "3px solid #fff" : "3px solid transparent", transition: "border 0.1s" }} />
-                ))}
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn small onClick={saveEdit} disabled={!editAccName.trim()}>Save Changes</Btn>
-              <Btn small variant="ghost" onClick={() => setEditingAccId(null)}>Cancel</Btn>
-            </div>
-          </div>
-        );
-      }
-
-      if (isDeleting) {
-        return (
-          <div key={a.id} className="fade-in" style={{ background: C.redDim, border: `1px solid ${C.red}55`, borderRadius: 10, padding: 14, display: "flex", flexDirection: "column", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-              <span style={{ fontSize: 16, color: C.red, flexShrink: 0 }}>⚠</span>
-              <div style={{ flex: 1, fontSize: 13, color: C.text, lineHeight: 1.5 }}>
-                Delete <b>"{a.name}"</b>{tradeCount > 0 ? <> and its <b>{tradeCount} trade{tradeCount !== 1 ? "s" : ""}</b></> : ""}? This cannot be undone.
-              </div>
-            </div>
-            <div style={{ display: "flex", gap: 8 }}>
-              <Btn small variant="danger" onClick={() => { dispatch({ type: "DELETE_ACCOUNT", id: a.id }); setDeleteConfirmId(null); }} style={{ flex: 1, justifyContent: "center" }}>Yes, Delete</Btn>
-              <Btn small variant="ghost" onClick={() => setDeleteConfirmId(null)} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
-            </div>
-          </div>
-        );
-      }
-
-      return (
-        <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", background: C.surfaceHigh, borderRadius: 10 }}>
-          <div style={{ width: 10, height: 10, borderRadius: "50%", background: a.color, flexShrink: 0 }} />
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{ fontWeight: 600, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.name}</div>
-            <div style={{ fontSize: 11, color: C.textMuted }}>{a.type}</div>
-          </div>
-          <Badge color={a.color}>{calcStats(state.trades.filter(t => t.account === a.id)).netPnl >= 0 ? "+" : ""}{calcStats(state.trades.filter(t => t.account === a.id)).netPnl.toFixed(2)}</Badge>
-          <button onClick={startEdit} style={{ background: C.blueDim, border: "none", borderRadius: 7, color: C.blue, padding: "5px 10px", cursor: "pointer", fontSize: 12, flexShrink: 0 }}>Edit</button>
-          <button onClick={() => setDeleteConfirmId(a.id)} style={{ background: C.redDim, border: "none", borderRadius: 7, color: C.red, padding: "5px 10px", cursor: "pointer", fontSize: 12, flexShrink: 0 }}>Delete</button>
-        </div>
-      );
-    })}
-  </div>
-  {canAddAccount(state) ? (
-    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr auto", gap: 10, alignItems: "end" }}>
-      <Inp label="Account Name" value={newAccName} onChange={setNewAccName} placeholder="e.g. FTMO 100K Funded" />
-      <Sel label="Type" value={newAccType} onChange={setNewAccType} options={["Funded", "Combine", "Live", "Demo"]} />
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1 }}>Color</label>
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-          {ACCOUNT_COLORS.map(col => <div key={col} onClick={() => setNewAccColor(col)} style={{ width: 24, height: 24, borderRadius: "50%", background: col, cursor: "pointer", border: newAccColor === col ? `3px solid #fff` : "3px solid transparent", transition: "border 0.1s" }} />)}
-        </div>
-      </div>
-      <Btn onClick={addAccount}>Add Account</Btn>
-    </div>
-  ) : (
-    <InlineUpgradeLock dispatch={dispatch} text={`Ace Basic supports ${FREE_LIMITS.maxAccounts} account. Upgrade to AcePlus to add unlimited accounts.`} />
-  )}
-</Card>
       {/* Sessions */}
       <Card>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
