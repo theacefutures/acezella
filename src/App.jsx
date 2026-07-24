@@ -1319,12 +1319,66 @@ function Sidebar({ page, setPage, state, dispatch, mobileNavOpen, onClose }) {
 // each thumbnail so it's clear which timeframe each chart is, both for the
 // trader's own reference and for anyone they share the trade with.
 const TIMEFRAME_OPTIONS = ["1m", "5m", "15m", "30m", "1H", "4H", "1D", "1W"];
+const GRID_DEFAULT_TIMEFRAMES = ["15m", "30m", "1H", "4H"];
+
+function loadImageFromFile(file) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => resolve(img);
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+// Draws `img` into the ctx rect (x,y,w,h) using "cover" fit (crop to fill,
+// no distortion) — same behavior as CSS object-fit: cover.
+function drawImageCover(ctx, img, x, y, w, h) {
+  const ir = img.width / img.height, cr = w / h;
+  let sx, sy, sw, sh;
+  if (ir > cr) { sh = img.height; sw = sh * cr; sx = (img.width - sw) / 2; sy = 0; }
+  else { sw = img.width; sh = sw / cr; sx = 0; sy = (img.height - sh) / 2; }
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+// Combines up to 4 chart screenshots into a single 2×2 grid image, labeling
+// each quadrant with its timeframe. Empty quadrants are left blank. Returns
+// a JPEG Blob ready to upload as one screenshot.
+async function combineGridImages(slots) {
+  const cw = 1280, ch = 720, cellW = cw / 2, cellH = ch / 2;
+  const canvas = document.createElement("canvas");
+  canvas.width = cw; canvas.height = ch;
+  const ctx = canvas.getContext("2d");
+  ctx.fillStyle = "#0b1220"; ctx.fillRect(0, 0, cw, ch);
+  const positions = [[0, 0], [cellW, 0], [0, cellH], [cellW, cellH]];
+  for (let i = 0; i < 4; i++) {
+    const slot = slots[i];
+    const [x, y] = positions[i];
+    if (slot?.file) {
+      try { drawImageCover(ctx, await loadImageFromFile(slot.file), x, y, cellW, cellH); }
+      catch { ctx.fillStyle = "#1a2338"; ctx.fillRect(x, y, cellW, cellH); }
+    } else {
+      ctx.fillStyle = "#1a2338"; ctx.fillRect(x, y, cellW, cellH);
+    }
+    if (slot?.timeframe) {
+      ctx.font = "bold 22px sans-serif";
+      const label = slot.timeframe, padX = 10, boxW = ctx.measureText(label).width + padX * 2;
+      ctx.fillStyle = "#000000cc"; ctx.fillRect(x + 10, y + 10, boxW, 34);
+      ctx.fillStyle = "#ffffff"; ctx.fillText(label, x + 10 + padX, y + 34);
+    }
+  }
+  ctx.strokeStyle = "#ffffff26"; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.moveTo(cellW, 0); ctx.lineTo(cellW, ch); ctx.moveTo(0, cellH); ctx.lineTo(cw, cellH); ctx.stroke();
+  return new Promise(resolve => canvas.toBlob(resolve, "image/jpeg", 0.92));
+}
 
 function ScreenshotUploader({ screenshots = [], onChange, max = 4, locked, userId }) {
   const fileRef = useRef();
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState({ done: 0, total: 0 });
   const [error, setError] = useState("");
+  const [mode, setMode] = useState("single"); // "single" | "grid"
+  const [gridSlots, setGridSlots] = useState(GRID_DEFAULT_TIMEFRAMES.map(tf => ({ timeframe: tf, file: null, preview: null })));
+  const [combining, setCombining] = useState(false);
+  const [gridSuccess, setGridSuccess] = useState(false);
 
   const handleFiles = async (files) => {
     const remaining = max - screenshots.length;
@@ -1360,35 +1414,128 @@ function ScreenshotUploader({ screenshots = [], onChange, max = 4, locked, userI
 
   const remainingSlots = max - screenshots.length;
 
+  // ── 2×2 Grid builder ──────────────────────────────────────────────────
+  const setSlotFile = (i, file) => {
+    if (!file || !file.type?.startsWith("image/")) return;
+    setGridSlots(slots => slots.map((s, idx) => {
+      if (idx !== i) return s;
+      if (s.preview) URL.revokeObjectURL(s.preview);
+      return { ...s, file, preview: URL.createObjectURL(file) };
+    }));
+  };
+  const clearSlot = (i) => setGridSlots(slots => slots.map((s, idx) => {
+    if (idx !== i) return s;
+    if (s.preview) URL.revokeObjectURL(s.preview);
+    return { ...s, file: null, preview: null };
+  }));
+  const setSlotTimeframe = (i, tf) => setGridSlots(slots => slots.map((s, idx) => idx === i ? { ...s, timeframe: tf } : s));
+  const handleSlotDrop = (i, e) => { e.preventDefault(); setSlotFile(i, e.dataTransfer.files?.[0]); };
+  const handleSlotPaste = (i, e) => {
+    const item = Array.from(e.clipboardData?.items || []).find(it => it.type?.startsWith("image/"));
+    if (item) { e.preventDefault(); setSlotFile(i, item.getAsFile()); }
+  };
+
+  const filledCount = gridSlots.filter(s => s.file).length;
+  const combineAndAttach = async () => {
+    if (!filledCount || remainingSlots < 1) return;
+    setCombining(true); setError("");
+    try {
+      const blob = await combineGridImages(gridSlots);
+      const path = `${userId || "anon"}/${Date.now()}_${Math.random().toString(36).slice(2)}_grid.jpg`;
+      const { error: uploadErr } = await supabase.storage.from("trade-screenshots").upload(path, blob, { cacheControl: "3600", upsert: false, contentType: "image/jpeg" });
+      if (uploadErr) throw uploadErr;
+      const { data } = supabase.storage.from("trade-screenshots").getPublicUrl(path);
+      const label = gridSlots.filter(s => s.file).map(s => s.timeframe).join(" / ");
+      onChange([...screenshots, { id: Date.now() + Math.random(), url: data.publicUrl, name: "2x2-grid.jpg", path, timeframe: label, isGrid: true }]);
+      gridSlots.forEach(s => s.preview && URL.revokeObjectURL(s.preview));
+      setGridSlots(GRID_DEFAULT_TIMEFRAMES.map(tf => ({ timeframe: tf, file: null, preview: null })));
+      setGridSuccess(true);
+      setTimeout(() => setGridSuccess(false), 2500);
+    } catch {
+      setError("Couldn't combine and upload the grid image. Try again.");
+    }
+    setCombining(false);
+  };
+
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <SectionLabel>Screenshots ({screenshots.length}/{max})</SectionLabel>
+        <SectionLabel>Trade Screenshot ({screenshots.length}/{max})</SectionLabel>
+        <Badge color={C.accent}>NEW!</Badge>
         {locked && <PlusBadge small />}
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 10 }}>
-        {screenshots.map(s => (
-          <div key={s.id} style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}`, aspectRatio: "16/9" }}>
-            <img src={s.url} alt={s.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-            <button onClick={() => remove(s)} style={{ position: "absolute", top: 4, right: 4, background: "#000b", border: "none", borderRadius: "50%", color: C.red, width: 22, height: 22, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
-            <select value={s.timeframe || ""} onChange={e => setTimeframe(s, e.target.value)} onClick={e => e.stopPropagation()}
-              style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: s.timeframe ? "#000c" : C.accent, color: s.timeframe ? "#fff" : "#04110c", border: "none", fontSize: 11, fontWeight: 800, padding: "5px 6px", cursor: "pointer", outline: "none", appearance: "auto" }}>
-              <option value="">Timeframe…</option>
-              {TIMEFRAME_OPTIONS.map(tf => <option key={tf} value={tf}>{tf}</option>)}
-            </select>
-          </div>
-        ))}
-        {remainingSlots > 0 && (
-          <div onClick={() => !uploading && fileRef.current?.click()} style={{ border: `2px dashed ${C.border}`, borderRadius: 8, aspectRatio: "16/9", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: uploading ? "wait" : "pointer", gap: 4, color: C.textDim, fontSize: 12 }}>
-            {uploading ? <span>Uploading {progress.done}/{progress.total}…</span> : <><span style={{ fontSize: 22 }}>+</span><span>Add Photos</span></>}
-          </div>
-        )}
+
+      <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+        <button onClick={() => setMode("single")} style={{ flex: 1, padding: "10px 14px", borderRadius: 9, border: `1px solid ${mode === "single" ? C.accent : C.border}`, background: mode === "single" ? C.accent : "transparent", color: mode === "single" ? "#04110c" : C.textMuted, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>Single Screenshot</button>
+        <button onClick={() => setMode("grid")} style={{ flex: 1, padding: "10px 14px", borderRadius: 9, border: `1px solid ${mode === "grid" ? C.accent : C.border}`, background: mode === "grid" ? C.accent : "transparent", color: mode === "grid" ? "#04110c" : C.textMuted, fontWeight: 800, fontSize: 13, cursor: "pointer" }}>2×2 Chart Grid</button>
       </div>
-      {error && <div style={{ fontSize: 11, color: C.red, marginBottom: 8 }}>{error}</div>}
-      {screenshots.some(s => !s.timeframe) && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Tag each chart's timeframe below so it's clear which is which when you share.</div>}
-      {remainingSlots > 1 && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Tip: tap "Add Photos" → choose "Photo Library" → select up to {remainingSlots} images at once before tapping Add.</div>}
-      {locked && screenshots.length >= max && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Ace Basic allows {max} screenshot per trade. Upgrade to AcePlus for up to 6.</div>}
-      <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
+
+      {mode === "single" ? (
+        <>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 10 }}>
+            {screenshots.map(s => (
+              <div key={s.id} style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}`, aspectRatio: "16/9" }}>
+                <img src={s.url} alt={s.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                <button onClick={() => remove(s)} style={{ position: "absolute", top: 4, right: 4, background: "#000b", border: "none", borderRadius: "50%", color: C.red, width: 22, height: 22, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                {s.isGrid ? (
+                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "#000c", color: "#fff", fontSize: 10.5, fontWeight: 800, padding: "5px 6px", textAlign: "center" }}>⊞ {s.timeframe}</div>
+                ) : (
+                  <select value={s.timeframe || ""} onChange={e => setTimeframe(s, e.target.value)} onClick={e => e.stopPropagation()}
+                    style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: s.timeframe ? "#000c" : C.accent, color: s.timeframe ? "#fff" : "#04110c", border: "none", fontSize: 11, fontWeight: 800, padding: "5px 6px", cursor: "pointer", outline: "none", appearance: "auto" }}>
+                    <option value="">Timeframe…</option>
+                    {TIMEFRAME_OPTIONS.map(tf => <option key={tf} value={tf}>{tf}</option>)}
+                  </select>
+                )}
+              </div>
+            ))}
+            {remainingSlots > 0 && (
+              <div onClick={() => !uploading && fileRef.current?.click()} style={{ border: `2px dashed ${C.border}`, borderRadius: 8, aspectRatio: "16/9", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: uploading ? "wait" : "pointer", gap: 4, color: C.textDim, fontSize: 12 }}>
+                {uploading ? <span>Uploading {progress.done}/{progress.total}…</span> : <><span style={{ fontSize: 22 }}>↑</span><span>Upload / Drop Screenshot</span></>}
+              </div>
+            )}
+          </div>
+          {screenshots.some(s => !s.timeframe && !s.isGrid) && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Tag each chart's timeframe below so it's clear which is which when you share.</div>}
+          {remainingSlots > 1 && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Tip: tap "Upload / Drop Screenshot" → choose "Photo Library" → select up to {remainingSlots} images at once before tapping Add.</div>}
+          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
+        </>
+      ) : (
+        <>
+          <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 12, lineHeight: 1.5 }}>
+            Click a timeframe slot to upload, paste (Ctrl+V / ⌘+V), or drag & drop a screenshot. Combine them into one 2×2 image.
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
+            {gridSlots.map((s, i) => (
+              <div key={i} tabIndex={0}
+                onPaste={e => handleSlotPaste(i, e)}
+                onDragOver={e => e.preventDefault()}
+                onDrop={e => handleSlotDrop(i, e)}
+                onClick={() => !s.file && !combining && document.getElementById(`grid-slot-input-${i}`)?.click()}
+                style={{ position: "relative", borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}`, aspectRatio: "16/10", background: C.surfaceHigh, cursor: s.file ? "default" : "pointer", outline: "none" }}>
+                {s.preview ? (
+                  <img src={s.preview} alt="" style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                ) : (
+                  <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6, color: C.textDim, fontSize: 12 }}>
+                    <span style={{ fontSize: 18 }}>⇪</span>
+                    <span>Upload / Drop</span>
+                  </div>
+                )}
+                <select value={s.timeframe} onClick={e => e.stopPropagation()} onChange={e => setSlotTimeframe(i, e.target.value)}
+                  style={{ position: "absolute", top: 6, left: 6, background: C.accent, color: "#04110c", border: "none", borderRadius: 6, fontSize: 11, fontWeight: 800, padding: "3px 6px", cursor: "pointer", outline: "none" }}>
+                  {TIMEFRAME_OPTIONS.map(tf => <option key={tf} value={tf}>{tf}</option>)}
+                </select>
+                {s.file && <button onClick={e => { e.stopPropagation(); clearSlot(i); }} style={{ position: "absolute", top: 6, right: 6, background: "#000b", border: "none", borderRadius: "50%", color: C.red, width: 22, height: 22, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>}
+                <input id={`grid-slot-input-${i}`} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { setSlotFile(i, e.target.files[0]); e.target.value = ""; }} />
+              </div>
+            ))}
+          </div>
+          <Btn variant="gradient" style={{ width: "100%", justifyContent: "center" }} disabled={!filledCount || combining || remainingSlots < 1} onClick={combineAndAttach}>
+            {combining ? "Combining…" : gridSuccess ? "✓ Attached!" : "⊞ Combine Images & Attach"}
+          </Btn>
+          {remainingSlots < 1 && <div style={{ fontSize: 11, color: C.textDim, marginTop: 6 }}>You're at your screenshot limit — remove one to attach a new grid.</div>}
+        </>
+      )}
+      {error && <div style={{ fontSize: 11, color: C.red, marginTop: 8 }}>{error}</div>}
+      {locked && screenshots.length >= max && <div style={{ fontSize: 11, color: C.textDim, marginTop: 4 }}>Ace Basic allows {max} screenshot per trade. Upgrade to AcePlus for up to 6.</div>}
     </div>
   );
 }
