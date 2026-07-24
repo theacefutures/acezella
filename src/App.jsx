@@ -479,7 +479,7 @@ async function fetchSharedTrade(id) {
 }
 
 function genDemoData() {
-  const symbols = ["MGC", "ES", "GC", "CL", "MMGC", "MES"];
+  const symbols = ["NQ", "ES", "GC", "CL", "MNQ", "MES"];
   const setups = ["Celery", "Breakout", "Onion", "Fade", "Inverted Celery"];
   const sessions = ["Asian", "London", "New York"];
   const moods = ["Focus", "Fear", "Greed", "Anger"];
@@ -1315,6 +1315,11 @@ function Sidebar({ page, setPage, state, dispatch, mobileNavOpen, onClose }) {
 }
 
 // ─── SCREENSHOT UPLOAD ────────────────────────────────────────────────────────
+// Chart timeframes a screenshot can be tagged with — shown as a dropdown on
+// each thumbnail so it's clear which timeframe each chart is, both for the
+// trader's own reference and for anyone they share the trade with.
+const TIMEFRAME_OPTIONS = ["1m", "5m", "15m", "30m", "1H", "4H", "1D", "1W"];
+
 function ScreenshotUploader({ screenshots = [], onChange, max = 4, locked, userId }) {
   const fileRef = useRef();
   const [uploading, setUploading] = useState(false);
@@ -1336,7 +1341,7 @@ function ScreenshotUploader({ screenshots = [], onChange, max = 4, locked, userI
       if (uploadErr) throw uploadErr;
       const { data } = supabase.storage.from("trade-screenshots").getPublicUrl(path);
       setProgress(p => ({ ...p, done: p.done + 1 }));
-      return { id: Date.now() + Math.random(), url: data.publicUrl, name: file.name, path };
+      return { id: Date.now() + Math.random(), url: data.publicUrl, name: file.name, path, timeframe: "" };
     }));
 
     const uploaded = results.filter(r => r.status === "fulfilled").map(r => r.value);
@@ -1351,6 +1356,8 @@ function ScreenshotUploader({ screenshots = [], onChange, max = 4, locked, userI
     if (s.path) { try { await supabase.storage.from("trade-screenshots").remove([s.path]); } catch {} }
   };
 
+  const setTimeframe = (s, timeframe) => onChange(screenshots.map(x => x.id === s.id ? { ...x, timeframe } : x));
+
   const remainingSlots = max - screenshots.length;
 
   return (
@@ -1364,6 +1371,11 @@ function ScreenshotUploader({ screenshots = [], onChange, max = 4, locked, userI
           <div key={s.id} style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}`, aspectRatio: "16/9" }}>
             <img src={s.url} alt={s.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
             <button onClick={() => remove(s)} style={{ position: "absolute", top: 4, right: 4, background: "#000b", border: "none", borderRadius: "50%", color: C.red, width: 22, height: 22, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+            <select value={s.timeframe || ""} onChange={e => setTimeframe(s, e.target.value)} onClick={e => e.stopPropagation()}
+              style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: s.timeframe ? "#000c" : C.accent, color: s.timeframe ? "#fff" : "#04110c", border: "none", fontSize: 11, fontWeight: 800, padding: "5px 6px", cursor: "pointer", outline: "none", appearance: "auto" }}>
+              <option value="">Timeframe…</option>
+              {TIMEFRAME_OPTIONS.map(tf => <option key={tf} value={tf}>{tf}</option>)}
+            </select>
           </div>
         ))}
         {remainingSlots > 0 && (
@@ -1373,6 +1385,7 @@ function ScreenshotUploader({ screenshots = [], onChange, max = 4, locked, userI
         )}
       </div>
       {error && <div style={{ fontSize: 11, color: C.red, marginBottom: 8 }}>{error}</div>}
+      {screenshots.some(s => !s.timeframe) && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Tag each chart's timeframe below so it's clear which is which when you share.</div>}
       {remainingSlots > 1 && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Tip: tap "Add Photos" → choose "Photo Library" → select up to {remainingSlots} images at once before tapping Add.</div>}
       {locked && screenshots.length >= max && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Ace Basic allows {max} screenshot per trade. Upgrade to AcePlus for up to 6.</div>}
       <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
@@ -1436,7 +1449,7 @@ function AddTradeModal({ state, dispatch }) {
     outcomeNeutral: editing.postTradeState === "Detached" ? "Yes" : editing.postTradeState === "Attached" ? "No" : "",
   } : {
     entryDate: new Date().toISOString().slice(0, 10), exitDate: "",
-    symbol: "MGC", direction: "Long",
+    symbol: "NQ", direction: "Long",
     entry: "", exit: "", size: "1", pnl: "", pips: "", outcome: "",
     setup: "", session: "", mood: "",
     timeframe: "", trendBias: "", risk: "",
@@ -1570,7 +1583,7 @@ function AddTradeModal({ state, dispatch }) {
             </div>
           </ModalField>
           <ModalField label="Symbol" sub="*">
-            <input value={form.symbol} onChange={e => set("symbol")(e.target.value.toUpperCase())} placeholder="MGC, ES, GC…" style={modalInputStyle} />
+            <input value={form.symbol} onChange={e => set("symbol")(e.target.value.toUpperCase())} placeholder="NQ, ES, GC…" style={modalInputStyle} />
           </ModalField>
         </div>
 
@@ -1788,7 +1801,7 @@ function ShareModal({ trade, dispatch }) {
 
 // ─── IMAGE LIGHTBOX (in-app viewer — avoids the data: URL new-tab block) ────
 // images: array of URL strings. index: currently shown position. onNavigate(newIndex): called when user moves prev/next.
-function ImageLightbox({ images, index, onClose, onNavigate }) {
+function ImageLightbox({ images, index, onClose, onNavigate, labels }) {
   const hasMultiple = Array.isArray(images) && images.length > 1;
   const goPrev = e => { e && e.stopPropagation(); if (!hasMultiple) return; onNavigate((index - 1 + images.length) % images.length); };
   const goNext = e => { e && e.stopPropagation(); if (!hasMultiple) return; onNavigate((index + 1) % images.length); };
@@ -1802,9 +1815,11 @@ function ImageLightbox({ images, index, onClose, onNavigate }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, index, images]);
   const url = Array.isArray(images) ? images[index] : images;
+  const label = labels && labels[index];
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000d", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
       <img src={url} alt="" style={{ maxWidth: "95vw", maxHeight: "95vh", borderRadius: 10, boxShadow: "0 20px 60px #000a", objectFit: "contain" }} onClick={e => e.stopPropagation()} />
+      {label && <div style={{ position: "fixed", top: 24, left: 24, background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 13, fontWeight: 800 }}>{label}</div>}
       <button onClick={onClose} style={{ position: "fixed", top: 20, right: 20, background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: "50%", width: 42, height: 42, color: "#fff", fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
       {hasMultiple && (
         <>
@@ -1866,9 +1881,10 @@ function PublicTradeView({ id }) {
   if (trade === undefined) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.textMuted }}>Loading shared trade…</div>;
   if (!trade) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.red }}>Invalid or expired trade link.</div>;
   const shotUrls = (trade.screenshots || []).map(s => s.url);
+  const shotLabels = (trade.screenshots || []).map(s => s.timeframe);
   return (
     <div style={{ minHeight: "100vh", background: C.bg, padding: 28, maxWidth: 680, margin: "0 auto" }}>
-      {lightboxIndex !== null && <ImageLightbox images={shotUrls} index={lightboxIndex} onClose={() => setLightboxIndex(null)} onNavigate={setLightboxIndex} />}
+      {lightboxIndex !== null && <ImageLightbox images={shotUrls} labels={shotLabels} index={lightboxIndex} onClose={() => setLightboxIndex(null)} onNavigate={setLightboxIndex} />}
       <div style={{ textAlign: "center", marginBottom: 28 }}>
         <div style={{ fontSize: 22, fontWeight: 800, color: C.accent, fontFamily: "'Inter', sans-serif" }}>ACEZELLA</div>
         <div style={{ fontSize: 11, color: C.textMuted, letterSpacing: 3, textTransform: "uppercase" }}>Shared Trade</div>
@@ -1895,7 +1911,12 @@ function PublicTradeView({ id }) {
         <Card>
           <SectionLabel>Chart Screenshots</SectionLabel>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 10 }}>
-            {trade.screenshots.map((s, i) => <img key={s.id} src={s.url} alt="" style={{ width: "100%", borderRadius: 8, border: `1px solid ${C.border}`, cursor: "zoom-in" }} onClick={() => setLightboxIndex(i)} />)}
+            {trade.screenshots.map((s, i) => (
+              <div key={s.id} style={{ position: "relative" }}>
+                <img src={s.url} alt="" style={{ width: "100%", borderRadius: 8, border: `1px solid ${C.border}`, cursor: "zoom-in", display: "block" }} onClick={() => setLightboxIndex(i)} />
+                {s.timeframe && <div style={{ position: "absolute", bottom: 6, left: 6, background: "#000c", color: "#fff", fontSize: 10.5, fontWeight: 800, padding: "3px 8px", borderRadius: 6 }}>{s.timeframe}</div>}
+              </div>
+            ))}
           </div>
         </Card>
       )}
@@ -3421,7 +3442,7 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
 
   return (
     <div className="fade-in" style={{ height: "100%", overflowY: "auto", padding: 24 }}>
-      {lightboxIndex !== null && <ImageLightbox images={(trade.screenshots || []).map(s => s.url)} index={lightboxIndex} onClose={() => setLightboxIndex(null)} onNavigate={setLightboxIndex} />}
+      {lightboxIndex !== null && <ImageLightbox images={(trade.screenshots || []).map(s => s.url)} labels={(trade.screenshots || []).map(s => s.timeframe)} index={lightboxIndex} onClose={() => setLightboxIndex(null)} onNavigate={setLightboxIndex} />}
       {showShare && (
         <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setShowShare(false)}>
           <div className="fade-in" onClick={e => e.stopPropagation()} style={{ background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 28, width: "100%", maxWidth: 500 }}>
@@ -3490,9 +3511,12 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
             {trade.screenshots?.length > 0 ? (
               <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 }}>
                 {trade.screenshots.map((s, i) => (
-                  <img key={s.id} src={s.url} alt={s.name}
-                    style={{ width: "100%", borderRadius: 8, border: `1px solid ${C.border}`, display: "block", cursor: "zoom-in" }}
-                    onClick={() => setLightboxIndex(i)} />
+                  <div key={s.id} style={{ position: "relative" }}>
+                    <img src={s.url} alt={s.name}
+                      style={{ width: "100%", borderRadius: 8, border: `1px solid ${C.border}`, display: "block", cursor: "zoom-in" }}
+                      onClick={() => setLightboxIndex(i)} />
+                    {s.timeframe && <div style={{ position: "absolute", bottom: 6, left: 6, background: "#000c", color: "#fff", fontSize: 10.5, fontWeight: 800, padding: "3px 8px", borderRadius: 6 }}>{s.timeframe}</div>}
+                  </div>
                 ))}
               </div>
             ) : (
