@@ -99,6 +99,7 @@ function buildGlobalCSS() {
   .mono{font-family:'Inter',sans-serif}
   @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
   @keyframes spin{to{transform:rotate(360deg)}}
+  @keyframes spadeBounce{0%,80%,100%{transform:translateY(0) scale(1);opacity:0.45}40%{transform:translateY(-12px) scale(1.15);opacity:1}}
   .fade-in{animation:fadeIn 0.2s ease forwards}
 
   /* ── Responsive: mobile topbar + sidebar drawer ───────────────────────── */
@@ -770,6 +771,22 @@ const Card = ({ children, style = {}, onClick }) => (
 const Badge = ({ children, color = C.accent }) => (
   <span style={{ background: color + "22", color, border: `1px solid ${color}44`, borderRadius: 6, padding: "2px 8px", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap" }}>{children}</span>
 );
+
+// Full-screen loading state — three bouncing spades (the app's own suit
+// symbol) instead of a plain spinner, used for auth/cloud-sync/shared-link
+// loading gates.
+function SpadeLoader({ label = "Loading…" }) {
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 16, color: C.textMuted, fontSize: 14 }}>
+      <div style={{ display: "flex", gap: 10 }}>
+        {[0, 1, 2].map(i => (
+          <span key={i} style={{ fontSize: 30, color: C.accent, display: "inline-block", animation: "spadeBounce 1.2s ease-in-out infinite", animationDelay: `${i * 0.15}s` }}>♤</span>
+        ))}
+      </div>
+      <div>{label}</div>
+    </div>
+  );
+}
 
 const StatCard = ({ label, value, sub, color, style, icon, iconColor, tone = "neutral", info }) => {
   const toneColor = tone === "positive" ? C.accent : tone === "negative" ? C.red : null;
@@ -2023,7 +2040,7 @@ function PublicTradeView({ id }) {
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [trade, setTrade] = useState(undefined); // undefined = loading, null = not found
   useEffect(() => { fetchSharedTrade(id).then(setTrade); }, [id]);
-  if (trade === undefined) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.textMuted }}>Loading shared trade…</div>;
+  if (trade === undefined) return <SpadeLoader label="Loading shared trade…" />;
   if (!trade) return <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.red }}>Invalid or expired trade link.</div>;
   const shotUrls = (trade.screenshots || []).map(s => s.url);
   const shotLabels = (trade.screenshots || []).map(s => s.timeframe);
@@ -7176,7 +7193,7 @@ export default function App() {
   if (!authChecked) return (
     <>
       <style>{buildGlobalCSS()}</style>
-      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.textMuted, fontSize: 14 }}>Loading…</div>
+      <div style={{ minHeight: "100vh", background: C.bg }}><SpadeLoader label="Loading…" /></div>
     </>
   );
 
@@ -7195,7 +7212,7 @@ export default function App() {
   if (!cloudLoaded) return (
     <>
       <style>{buildGlobalCSS()}</style>
-      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", color: C.textMuted, fontSize: 14 }}>Loading your journal…</div>
+      <div style={{ minHeight: "100vh", background: C.bg }}><SpadeLoader label="Loading your journal…" /></div>
     </>
   );
 
