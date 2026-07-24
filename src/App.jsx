@@ -1411,8 +1411,6 @@ function ScreenshotUploader({ screenshots = [], onChange, max = 4, locked, userI
     if (s.path) { try { await supabase.storage.from("trade-screenshots").remove([s.path]); } catch {} }
   };
 
-  const setTimeframe = (s, timeframe) => onChange(screenshots.map(x => x.id === s.id ? { ...x, timeframe } : x));
-
   const remainingSlots = max - screenshots.length;
 
   // ── 2×2 Grid builder ──────────────────────────────────────────────────
@@ -1473,31 +1471,30 @@ function ScreenshotUploader({ screenshots = [], onChange, max = 4, locked, userI
 
       {mode === "single" ? (
         <>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 8, marginBottom: 10 }}>
-            {screenshots.map(s => (
-              <div key={s.id} style={{ position: "relative", borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}`, aspectRatio: "16/9" }}>
-                <img src={s.url} alt={s.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
-                <button onClick={() => remove(s)} style={{ position: "absolute", top: 4, right: 4, background: "#000b", border: "none", borderRadius: "50%", color: C.red, width: 22, height: 22, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
-                {s.isGrid ? (
-                  <div style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: "#000c", color: "#fff", fontSize: 10.5, fontWeight: 800, padding: "5px 6px", textAlign: "center" }}>⊞ {s.timeframe}</div>
+          {(() => {
+            const singleShot = screenshots.find(s => !s.isGrid);
+            const canUploadSingle = !singleShot && remainingSlots > 0;
+            return (
+              <div style={{ marginBottom: 10 }}>
+                {singleShot ? (
+                  <div style={{ position: "relative", borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}`, aspectRatio: "16/9", maxWidth: 340 }}>
+                    <img src={singleShot.url} alt={singleShot.name} style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+                    <button onClick={() => remove(singleShot)} style={{ position: "absolute", top: 6, right: 6, background: "#000b", border: "none", borderRadius: "50%", color: C.red, width: 24, height: 24, fontSize: 14, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                  </div>
+                ) : canUploadSingle ? (
+                  <div onClick={() => !uploading && fileRef.current?.click()}
+                    onDragOver={e => e.preventDefault()}
+                    onDrop={e => { e.preventDefault(); const f = e.dataTransfer.files?.[0]; if (f) handleFiles([f]); }}
+                    style={{ border: `2px dashed ${C.border}`, borderRadius: 10, aspectRatio: "16/9", maxWidth: 340, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: uploading ? "wait" : "pointer", gap: 4, color: C.textDim, fontSize: 12 }}>
+                    {uploading ? <span>Uploading…</span> : <><span style={{ fontSize: 22 }}>↑</span><span>Upload / Drop Screenshot</span></>}
+                  </div>
                 ) : (
-                  <select value={s.timeframe || ""} onChange={e => setTimeframe(s, e.target.value)} onClick={e => e.stopPropagation()}
-                    style={{ position: "absolute", bottom: 0, left: 0, right: 0, background: s.timeframe ? "#000c" : C.accent, color: s.timeframe ? "#fff" : "#04110c", border: "none", fontSize: 11, fontWeight: 800, padding: "5px 6px", cursor: "pointer", outline: "none", appearance: "auto" }}>
-                    <option value="">Timeframe…</option>
-                    {TIMEFRAME_OPTIONS.map(tf => <option key={tf} value={tf}>{tf}</option>)}
-                  </select>
+                  <div style={{ fontSize: 12, color: C.textDim }}>You're at your screenshot limit — remove it to upload a different one.</div>
                 )}
               </div>
-            ))}
-            {remainingSlots > 0 && (
-              <div onClick={() => !uploading && fileRef.current?.click()} style={{ border: `2px dashed ${C.border}`, borderRadius: 8, aspectRatio: "16/9", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", cursor: uploading ? "wait" : "pointer", gap: 4, color: C.textDim, fontSize: 12 }}>
-                {uploading ? <span>Uploading {progress.done}/{progress.total}…</span> : <><span style={{ fontSize: 22 }}>↑</span><span>Upload / Drop Screenshot</span></>}
-              </div>
-            )}
-          </div>
-          {screenshots.some(s => !s.timeframe && !s.isGrid) && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Tag each chart's timeframe below so it's clear which is which when you share.</div>}
-          {remainingSlots > 1 && <div style={{ fontSize: 11, color: C.textDim, marginBottom: 4 }}>Tip: tap "Upload / Drop Screenshot" → choose "Photo Library" → select up to {remainingSlots} images at once before tapping Add.</div>}
-          <input ref={fileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={e => { handleFiles(e.target.files); e.target.value = ""; }} />
+            );
+          })()}
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => { if (e.target.files[0]) handleFiles([e.target.files[0]]); e.target.value = ""; }} />
         </>
       ) : (
         <>
