@@ -4007,7 +4007,7 @@ function BreakdownSection({ icon, title, items, colorFn }) {
       </div>
       <div style={{ display: "grid", gridTemplateColumns: `repeat(${Math.min(shown.length, 3)}, 1fr)`, gap: 8 }}>
         {shown.map((it, i) => (
-          <div key={i} style={{ background: C.bg, borderRadius: 9, padding: "9px 10px", textAlign: "center" }}>
+          <div key={i} style={{ background: C.surfaceHigh, borderRadius: 9, padding: "9px 10px", textAlign: "center" }}>
             <span style={{ display: "inline-block", background: (colorFn ? colorFn(it.label) : it.color) + "22", color: colorFn ? colorFn(it.label) : it.color, border: `1px solid ${(colorFn ? colorFn(it.label) : it.color)}55`, borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 700, marginBottom: 6 }}>{it.label}</span>
             <div className="mono" style={{ fontSize: 15, fontWeight: 800, color: it.pct >= 50 ? C.accent : C.red }}>{it.pct}%</div>
             <div style={{ fontSize: 10, color: C.textDim }}>{it.w}W / {it.l}L</div>
@@ -4056,7 +4056,7 @@ function StrategyCard({ s, trades, dispatch }) {
           <div style={{ fontSize: 11, color: C.textDim, marginTop: 10, marginBottom: 4 }}>Avg Loser</div>
           <div className="mono" style={{ fontSize: 15, fontWeight: 700, color: C.red }}>{fmt$(-stats.avgLoss)}</div>
         </div>
-        <div style={{ background: C.bg, borderRadius: 9, padding: "9px 10px" }}>
+        <div style={{ background: C.surfaceHigh, borderRadius: 9, padding: "9px 10px" }}>
           <div style={{ fontSize: 10, color: C.textDim, fontWeight: 700, letterSpacing: 1, textTransform: "uppercase", marginBottom: 6 }}>Trend Bias</div>
           {trendItems.length === 0 && <div style={{ fontSize: 11, color: C.textDim }}>No data yet</div>}
           {trendItems.map((it, i) => (
@@ -4553,33 +4553,148 @@ function buildFieldBreakdown(trades, field, colorFn) {
   }).sort((a, b) => b.net - a.net);
 }
 
+// ─── GROUPED BAR CHART (P&L by Setup × <dimension>) ────────────────────────
+// Each group is one setup; each group holds one sub-bar per dimension value
+// (risk level, session, timeframe, trend). Hovering any bar in a group shows
+// the whole group's breakdown in one tooltip.
+function GroupedBarChart({ groups, height = 260, tooltipFormat }) {
+  const [hoverGroup, setHoverGroup] = useState(null);
+  if (!groups.length) return <div style={{ height, display: "flex", alignItems: "center", justifyContent: "center", color: C.textDim, fontSize: 13 }}>No data yet</div>;
+  const allValues = groups.flatMap(g => g.bars.map(b => b.value));
+  const max = Math.max(...allValues, 0);
+  const min = Math.min(...allValues, 0);
+  const range = (max - min) || 1;
+  const padTop = 10, padBottom = 30, padLeft = 56;
+  const plotH = height - padTop - padBottom;
+  const zeroY = padTop + (max / range) * plotH;
+  const ySteps = 4;
+  const yLabels = Array.from({ length: ySteps + 1 }, (_, i) => min + (range / ySteps) * i).reverse();
+  const fmtTip = tooltipFormat || fmt$;
+
+  return (
+    <div style={{ position: "relative", width: "100%", height }}>
+      {yLabels.map((v, i) => {
+        const y = padTop + (i / ySteps) * plotH;
+        return (
+          <div key={i} style={{ position: "absolute", left: 0, top: y - 6, width: "100%" }}>
+            <span style={{ position: "absolute", left: 0, fontSize: 10, color: C.textDim, fontFamily: "'Inter',sans-serif" }}>{`$${Math.round(v).toLocaleString()}`}</span>
+            <div style={{ position: "absolute", left: padLeft, right: 0, top: 6, borderTop: v === 0 ? `1px solid ${C.borderLight}` : `1px dashed ${C.border}` }} />
+          </div>
+        );
+      })}
+      <div style={{ position: "absolute", left: padLeft, right: 0, top: padTop, bottom: padBottom, display: "flex", alignItems: "stretch", justifyContent: "center", gap: 14 }}>
+        {groups.map((g, gi) => {
+          const barMetrics = g.bars.map(b => {
+            const barH = Math.max(2, (Math.abs(b.value) / range) * plotH);
+            const isPos = b.value >= 0;
+            return { ...b, barH, top: isPos ? zeroY - padTop - barH : zeroY - padTop };
+          });
+          const topMostPx = Math.min(...barMetrics.map(m => m.top), zeroY - padTop);
+          return (
+            <div key={gi} style={{ flex: "1 1 0", maxWidth: 160, minWidth: 0, position: "relative", display: "flex", alignItems: "stretch", justifyContent: "center", gap: 4 }}
+              onMouseEnter={() => setHoverGroup(gi)} onMouseLeave={() => setHoverGroup(h => h === gi ? null : h)}>
+              {hoverGroup === gi && (
+                <div style={{ position: "absolute", bottom: plotH - topMostPx + 12, left: "50%", transform: "translateX(-50%)", background: C.surfaceHigh, border: `1px solid ${C.border}`, borderRadius: 8, padding: "9px 14px", fontSize: 11.5, whiteSpace: "nowrap", zIndex: 5, boxShadow: "0 4px 14px #0008" }}>
+                  <div style={{ fontWeight: 800, fontSize: 12.5, marginBottom: 5 }}>{g.label}</div>
+                  {barMetrics.map(b => (
+                    <div key={b.label} style={{ display: "flex", justifyContent: "space-between", gap: 16 }}>
+                      <span style={{ color: b.color }}>{b.label}</span>
+                      <span className="mono" style={{ fontWeight: 700, color: b.value >= 0 ? C.accent : C.red, marginLeft: 8 }}>{fmtTip(b.value)}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {barMetrics.map((b, bi) => (
+                <div key={bi} style={{ width: 16, position: "relative" }}>
+                  <div style={{ position: "absolute", left: 0, right: 0, top: b.top, height: b.barH, background: b.color, borderRadius: 3, opacity: hoverGroup === gi ? 1 : 0.9, transition: "opacity 0.1s" }} />
+                </div>
+              ))}
+            </div>
+          );
+        })}
+      </div>
+      <div style={{ position: "absolute", left: padLeft, right: 0, bottom: 0, display: "flex", justifyContent: "center", gap: 14 }}>
+        {groups.map((g, gi) => <div key={gi} style={{ flex: "1 1 0", maxWidth: 160, textAlign: "center", fontSize: 10, color: C.textDim, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{g.label}</div>)}
+      </div>
+    </div>
+  );
+}
+
+// ─── PER-SETUP BREAKDOWN LIST (used by the By Setup view) ─────────────────
+function SetupBreakdownList({ setups }) {
+  if (!setups.length) return <div style={{ color: C.textDim, fontSize: 12, padding: "10px 0" }}>No data yet</div>;
+  return (
+    <div style={{ maxHeight: 340, overflowY: "auto", paddingRight: 4 }}>
+      <div style={{ display: "grid", gridTemplateColumns: "110px 1fr 1fr 1fr 1fr", gap: 10, padding: "0 14px 8px", minWidth: 420 }}>
+        <div />
+        {["Win%", "W/L", "Net", "PF"].map(h => <div key={h} style={{ fontSize: 9, color: C.textDim, textTransform: "uppercase" }}>{h}</div>)}
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        {setups.map(su => (
+          <div key={su.name}>
+            <div style={{ fontWeight: 800, fontSize: 13, marginBottom: 6, padding: "0 14px" }}>{su.name}</div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {su.breakdown.map((it, i) => (
+                <div key={i} style={{ display: "grid", gridTemplateColumns: "110px 1fr 1fr 1fr 1fr", alignItems: "center", gap: 10, background: C.bg, borderRadius: 9, padding: "9px 14px", minWidth: 420 }}>
+                  <Badge color={it.color}>{it.label}</Badge>
+                  <div className="mono" style={{ fontWeight: 700, color: it.winPct >= 50 ? C.accent : C.red, fontSize: 13 }}>{it.winPct}%</div>
+                  <div className="mono" style={{ fontWeight: 700, fontSize: 13 }}>{it.w}/{it.l}</div>
+                  <div className="mono" style={{ fontWeight: 700, fontSize: 13, color: it.net >= 0 ? C.accent : C.red }}>{fmt$(it.net)}</div>
+                  <div className="mono" style={{ fontWeight: 700, fontSize: 13 }}>{it.pf >= 99 ? "∞" : it.pf.toFixed(1)}</div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function StatBreakdownSection({ icon, title, trades, field, strategies, colorFn }) {
   const [mode, setMode] = useState("Overall");
-  const [setupPick, setSetupPick] = useState(strategies?.[0]?.name || "");
-  const pool = mode === "By Setup" && setupPick ? trades.filter(t => t.setup === setupPick) : trades;
-  const breakdown = buildFieldBreakdown(pool, field, colorFn);
+  const breakdown = buildFieldBreakdown(trades, field, colorFn);
   const chartData = breakdown.map(b => ({ label: b.label, value: b.net, count: b.w + b.l, winRate: b.winPct }));
+
+  // By-setup cross-tab: one group per setup, one sub-bar per dimension value.
+  const setupNames = strategies?.length ? strategies.map(s => s.name) : [...new Set(trades.map(t => t.setup).filter(Boolean))];
+  const bySetup = setupNames.map(name => {
+    const setupTrades = trades.filter(t => t.setup === name);
+    const setupBreakdown = buildFieldBreakdown(setupTrades, field, colorFn);
+    return { name, breakdown: setupBreakdown, bars: setupBreakdown.map(b => ({ label: b.label, value: b.net, color: b.color })) };
+  }).filter(su => su.bars.length > 0);
+
   return (
     <Card>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 10 }}>
         <div style={{ flex: 1, display: "flex", alignItems: "center", gap: 7, fontWeight: 700, fontSize: 15 }}><span>{icon}</span>{title}</div>
-        {mode === "By Setup" && strategies?.length > 0 && (
-          <Sel value={setupPick} onChange={setSetupPick} options={strategies.map(s => s.name)} style={{ padding: "6px 10px", fontSize: 12 }} />
-        )}
         <div style={{ display: "flex", gap: 6 }}>
           {["Overall", "By Setup"].map(m => <Btn key={m} small variant={mode === m ? "success" : "ghost"} onClick={() => setMode(m)}>{m}</Btn>)}
         </div>
       </div>
-      <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16 }}>
-        <div>
-          <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 8 }}>P&L by {title.replace(" Statistics", "")}</div>
-          <GridBarChart data={chartData} height={260} colorFn={(d) => colorFn ? colorFn(d.label) : hashColor(d.label)} />
+      {mode === "Overall" ? (
+        <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 8 }}>P&L by {title.replace(" Statistics", "")}</div>
+            <GridBarChart data={chartData} height={260} colorFn={(d) => colorFn ? colorFn(d.label) : hashColor(d.label)} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 8 }}>Breakdown</div>
+            <BreakdownTable items={breakdown} />
+          </div>
         </div>
-        <div>
-          <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 8 }}>Breakdown</div>
-          <BreakdownTable items={breakdown} />
+      ) : (
+        <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 8 }}>P&L by Setup × {title.replace(" Statistics", "")}</div>
+            <GroupedBarChart groups={bySetup.map(su => ({ label: su.name, bars: su.bars }))} height={260} />
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 8 }}>Per Setup Breakdown</div>
+            <SetupBreakdownList setups={bySetup} />
+          </div>
         </div>
-      </div>
+      )}
     </Card>
   );
 }
