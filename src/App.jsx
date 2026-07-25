@@ -1039,7 +1039,7 @@ function AuthScreen({ state, dispatch }) {
   const [email, setEmail] = useState(""), [password, setPassword] = useState(""), [name, setName] = useState(""), [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [showSignupNotice, setShowSignupNotice] = useState(false);
-  const SIGNUP_CONTACT_EMAIL = "acezella.journal@gmail.com";
+  const SIGNUP_CONTACT_EMAIL = "theacefutures@gmail.com";
   const login = async () => {
     if (!email || !password) { setError("Email and password required."); return; }
     setError(""); setBusy(true);
@@ -1086,7 +1086,7 @@ function AuthScreen({ state, dispatch }) {
           </div>
           <Btn variant="ghost" onClick={() => { if (mode === "login") { setShowSignupNotice(true); return; } setMode("login"); setError(""); }} style={{ width: "100%", justifyContent: "center" }}>{mode === "login" ? "Need an account? Sign up" : "Already have an account? Sign in"}</Btn>
         </Card>
-        <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: C.textDim }}>Contact To Sign Up: acezella.journal@gmail.com </div>
+        <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: C.textDim }}>Contact To Sign Up: theacefutures@gmail.com </div>
       </div>
       {showSignupNotice && (
         <div
@@ -1267,7 +1267,7 @@ function TopHeader({ state, dispatch, setPage, page, syncStatus }) {
 
       <button title="Settings" onClick={() => setPage("settings")} style={{ background: C.surfaceHigh, border: `1px solid ${C.border}`, borderRadius: 9, color: C.textMuted, width: 34, height: 34, cursor: "pointer", fontSize: 15, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>⚙️</button>
 
-      <a href="mailto:acezella.journal@gmail.com" style={{ display: "flex", alignItems: "center", gap: 6, color: C.textMuted, fontSize: 13, fontWeight: 600, textDecoration: "none", padding: "8px 6px", whiteSpace: "nowrap" }}>✉ Contact Us</a>
+      <a href="mailto:theacefutures@gmail.com" style={{ display: "flex", alignItems: "center", gap: 6, color: C.textMuted, fontSize: 13, fontWeight: 600, textDecoration: "none", padding: "8px 6px", whiteSpace: "nowrap" }}>✉ Contact Us</a>
 
       {/* Session control */}
       <div style={{ position: "relative" }}>
