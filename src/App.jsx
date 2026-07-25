@@ -480,7 +480,7 @@ async function fetchSharedTrade(id) {
 }
 
 function genDemoData() {
-  const symbols = ["NQ", "ES", "GC", "CL", "MNQ", "MES"];
+  const symbols = ["MGC", "ES", "GC", "CL", "MMGC", "MES"];
   const setups = ["Celery", "Breakout", "Onion", "Fade", "Inverted Celery"];
   const sessions = ["Asian", "London", "New York"];
   const moods = ["Focus", "Fear", "Greed", "Anger"];
@@ -1614,7 +1614,7 @@ function AddTradeModal({ state, dispatch }) {
     outcomeNeutral: editing.postTradeState === "Detached" ? "Yes" : editing.postTradeState === "Attached" ? "No" : "",
   } : {
     entryDate: new Date().toISOString().slice(0, 10), exitDate: "",
-    symbol: "NQ", direction: "Long",
+    symbol: "MGC", direction: "Long",
     entry: "", exit: "", size: "1", pnl: "", pips: "", outcome: "",
     setup: "", session: "", mood: "",
     timeframe: "", trendBias: "", risk: "",
@@ -1766,7 +1766,7 @@ function AddTradeModal({ state, dispatch }) {
             </div>
           </ModalField>
           <ModalField label="Symbol" sub="*">
-            <input value={form.symbol} onChange={e => set("symbol")(e.target.value.toUpperCase())} placeholder="NQ, ES, GC…" style={modalInputStyle} />
+            <input value={form.symbol} onChange={e => set("symbol")(e.target.value.toUpperCase())} placeholder="MGC, ES, GC…" style={modalInputStyle} />
           </ModalField>
         </div>
 
@@ -1996,8 +1996,17 @@ function ShareModal({ trade, dispatch }) {
 // images: array of URL strings. index: currently shown position. onNavigate(newIndex): called when user moves prev/next.
 function ImageLightbox({ images, index, onClose, onNavigate, labels }) {
   const hasMultiple = Array.isArray(images) && images.length > 1;
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const draggingRef = useRef(false);
+  const lastPosRef = useRef({ x: 0, y: 0 });
+
   const goPrev = e => { e && e.stopPropagation(); if (!hasMultiple) return; onNavigate((index - 1 + images.length) % images.length); };
   const goNext = e => { e && e.stopPropagation(); if (!hasMultiple) return; onNavigate((index + 1) % images.length); };
+
+  // Reset zoom/pan whenever the displayed image changes.
+  useEffect(() => { setZoom(1); setOffset({ x: 0, y: 0 }); }, [index]);
+
   useEffect(() => {
     const onKey = e => {
       if (e.key === "Escape") onClose();
@@ -2007,12 +2016,50 @@ function ImageLightbox({ images, index, onClose, onNavigate, labels }) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, index, images]);
+
+  // Mouse-wheel zoom, centered under the cursor. Scrolling out past 1x
+  // snaps back to the un-zoomed, un-panned view.
+  const handleWheel = e => {
+    e.preventDefault(); e.stopPropagation();
+    setZoom(z => {
+      const next = Math.min(5, Math.max(1, z - e.deltaY * 0.0015 * z));
+      if (next <= 1.01) setOffset({ x: 0, y: 0 });
+      return next;
+    });
+  };
+  const handleMouseDown = e => {
+    if (zoom <= 1) return;
+    e.stopPropagation();
+    draggingRef.current = true;
+    lastPosRef.current = { x: e.clientX, y: e.clientY };
+  };
+  const handleMouseMove = e => {
+    if (!draggingRef.current) return;
+    const dx = e.clientX - lastPosRef.current.x, dy = e.clientY - lastPosRef.current.y;
+    lastPosRef.current = { x: e.clientX, y: e.clientY };
+    setOffset(o => ({ x: o.x + dx, y: o.y + dy }));
+  };
+  const stopDrag = () => { draggingRef.current = false; };
+  const resetZoom = e => { e && e.stopPropagation(); setZoom(1); setOffset({ x: 0, y: 0 }); };
+
   const url = Array.isArray(images) ? images[index] : images;
   const label = labels && labels[index];
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000d", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out" }}>
-      <img src={url} alt="" style={{ maxWidth: "95vw", maxHeight: "95vh", borderRadius: 10, boxShadow: "0 20px 60px #000a", objectFit: "contain" }} onClick={e => e.stopPropagation()} />
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000d", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out", overflow: "hidden" }}>
+      <img src={url} alt=""
+        onClick={e => e.stopPropagation()}
+        onWheel={handleWheel}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={stopDrag}
+        onMouseLeave={stopDrag}
+        onDoubleClick={resetZoom}
+        draggable={false}
+        style={{ maxWidth: "95vw", maxHeight: "95vh", borderRadius: 10, boxShadow: "0 20px 60px #000a", objectFit: "contain", transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transition: draggingRef.current ? "none" : "transform 0.08s ease-out", cursor: zoom > 1 ? "grab" : "zoom-in", userSelect: "none", touchAction: "none" }} />
       {label && <div style={{ position: "fixed", top: 24, left: 24, background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 13, fontWeight: 800 }}>{label}</div>}
+      {zoom > 1 && (
+        <div onClick={resetZoom} title="Reset zoom" style={{ position: "fixed", top: 24, right: 74, background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{Math.round(zoom * 100)}% · Reset</div>
+      )}
       <button onClick={onClose} style={{ position: "fixed", top: 20, right: 20, background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: "50%", width: 42, height: 42, color: "#fff", fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
       {hasMultiple && (
         <>
