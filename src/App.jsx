@@ -465,7 +465,7 @@ async function createShareLink(trade) {
     id: trade.id, symbol: trade.symbol, direction: trade.direction, date: trade.date,
     entry: trade.entry, exit: trade.exit, size: trade.size, pnl: trade.pnl, pips: trade.pips,
     outcome: trade.outcome, setup: trade.setup, session: trade.session, mood: trade.mood,
-    notes: trade.notes, screenshots: trade.screenshots,
+    notes: trade.notes, noteIdea: trade.noteIdea, noteEmotion: trade.noteEmotion, noteResult: trade.noteResult, screenshots: trade.screenshots,
   };
   const id = shortId();
   const { error } = await supabase.from("shared_trades").insert({ id, data: shareData });
@@ -1615,15 +1615,15 @@ function AddTradeModal({ state, dispatch }) {
   } : {
     entryDate: new Date().toISOString().slice(0, 10), exitDate: "",
     symbol: "MGC", direction: "Long",
-    entry: "", exit: "", size: "1", pnl: "", pips: "", outcome: "",
+    entry: "", exit: "", size: "", pnl: "", pips: "", outcome: "",
     setup: "", session: "", mood: "",
     timeframe: "", trendBias: "", risk: "",
     openTime: "", closeTime: "", fees: "", exitBehavior: "", outcomeNeutral: "",
-    notes: "", account: defaultAccount, screenshots: [], partialExits: [],
+    notes: "", noteIdea: "", noteEmotion: "", noteResult: "", account: defaultAccount, screenshots: [], partialExits: [],
   });
   const [addingSetup, setAddingSetup] = useState(false);
   const [newSetupName, setNewSetupName] = useState("");
-  const [notebookOpen, setNotebookOpen] = useState(!!(editing && editing.notes));
+  const [notebookOpen, setNotebookOpen] = useState(!!(editing && (editing.notes || editing.noteIdea || editing.noteEmotion || editing.noteResult)));
   const set = k => v => setForm(f => ({ ...f, [k]: v }));
 
   // Win → force +, Loss → force −, Breakeven → force 0. Applied both when the
@@ -1686,10 +1686,19 @@ function AddTradeModal({ state, dispatch }) {
     const outcome = form.outcome || (pnl > 0 ? "Win" : pnl < 0 ? "Loss" : "BE");
     const postTradeState = form.outcomeNeutral === "Yes" ? "Detached" : form.outcomeNeutral === "No" ? "Attached" : (editing?.postTradeState || "");
     const isoDate = new Date(`${form.entryDate || new Date().toISOString().slice(0, 10)}T${form.openTime || "00:00"}`).toISOString();
+    // Combine the 3 notebook paragraphs into the plain `notes` string too, so
+    // search, the Journal preview snippet, and shared-trade links (which all
+    // read `notes`) keep working without needing to know about the 3 fields.
+    const combinedNotes = [
+      form.noteIdea && `💡 Trade Idea / Plan\n${form.noteIdea}`,
+      form.noteEmotion && `❤️ Feelings & Emotions\n${form.noteEmotion}`,
+      form.noteResult && `📝 Result & Takeaways\n${form.noteResult}`,
+    ].filter(Boolean).join("\n\n");
     const trade = {
       id: editing?.id || `t${Date.now()}`, ...form, date: isoDate, outcome, postTradeState,
       entry: parseFloat(form.entry) || 0, exit: parseFloat(form.exit) || 0, size: parseInt(form.size) || 1,
       pnl, pips: parseFloat(form.pips) || 0, fees: parseFloat(form.fees) || 0,
+      notes: combinedNotes,
     };
     dispatch({ type: editing ? "UPDATE_TRADE" : "ADD_TRADE", trade, id: editing?.id, data: trade });
     dispatch({ type: "CLOSE_MODAL" });
@@ -1906,8 +1915,23 @@ function AddTradeModal({ state, dispatch }) {
               <Btn small variant={notebookOpen ? "success" : "primary"} onClick={() => setNotebookOpen(o => !o)}>{notebookOpen ? "✓ Open" : "+ Add Note"}</Btn>
             </div>
             {notebookOpen && (
-              <textarea value={form.notes} onChange={e => set("notes")(e.target.value)} placeholder="What happened? Entry reason, execution quality, mistakes…" rows={4}
-                style={{ ...modalInputStyle, marginTop: 14, resize: "vertical" }} />
+              <div style={{ marginTop: 14, display: "flex", flexDirection: "column", gap: 14 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>💡 Trade Idea / Plan</div>
+                  <textarea value={form.noteIdea} onChange={e => set("noteIdea")(e.target.value)} placeholder="What was your setup, thesis, or plan going into this trade?" rows={3}
+                    style={{ ...modalInputStyle, resize: "vertical" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>❤️ Feelings & Emotions</div>
+                  <textarea value={form.noteEmotion} onChange={e => set("noteEmotion")(e.target.value)} placeholder="How did you feel before, during, and after the trade?" rows={3}
+                    style={{ ...modalInputStyle, resize: "vertical" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>📝 Result & Takeaways</div>
+                  <textarea value={form.noteResult} onChange={e => set("noteResult")(e.target.value)} placeholder="How did it play out? What was executed perfectly, and what needs to change next time?" rows={3}
+                    style={{ ...modalInputStyle, resize: "vertical" }} />
+                </div>
+              </div>
             )}
           </div>
 
@@ -2145,7 +2169,13 @@ function PublicTradeView({ id }) {
             </div>
           ))}
         </div>
-        {trade.notes && <div style={{ marginTop: 16, padding: 14, background: C.surfaceHigh, borderRadius: 10, fontSize: 14, color: C.textMuted, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{trade.notes}</div>}
+        {(trade.noteIdea || trade.noteEmotion || trade.noteResult) ? (
+          <div style={{ marginTop: 16, display: "flex", flexDirection: "column", gap: 12 }}>
+            {trade.noteIdea && <div style={{ padding: 14, background: C.surfaceHigh, borderRadius: 10 }}><div style={{ fontSize: 11, fontWeight: 700, color: C.textDim, marginBottom: 4 }}>💡 Trade Idea / Plan</div><div style={{ fontSize: 14, color: C.textMuted, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{trade.noteIdea}</div></div>}
+            {trade.noteEmotion && <div style={{ padding: 14, background: C.surfaceHigh, borderRadius: 10 }}><div style={{ fontSize: 11, fontWeight: 700, color: C.textDim, marginBottom: 4 }}>❤️ Feelings & Emotions</div><div style={{ fontSize: 14, color: C.textMuted, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{trade.noteEmotion}</div></div>}
+            {trade.noteResult && <div style={{ padding: 14, background: C.surfaceHigh, borderRadius: 10 }}><div style={{ fontSize: 11, fontWeight: 700, color: C.textDim, marginBottom: 4 }}>📝 Result & Takeaways</div><div style={{ fontSize: 14, color: C.textMuted, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{trade.noteResult}</div></div>}
+          </div>
+        ) : trade.notes && <div style={{ marginTop: 16, padding: 14, background: C.surfaceHigh, borderRadius: 10, fontSize: 14, color: C.textMuted, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{trade.notes}</div>}
       </Card>
       {trade.screenshots?.length > 0 && (
         <Card>
@@ -3661,11 +3691,24 @@ function contextBucket(trades, field, value) {
 // ─── TRADE DETAIL ────────────────────────────────────────────────────────────
 function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage }) {
   const { trades, activeAccount } = state;
-  const [notes, setNotes] = useState(trade.notes || ""), [editNotes, setEditNotes] = useState(false), [showShare, setShowShare] = useState(false);
+  const hasStructuredNotes = !!(trade.noteIdea || trade.noteEmotion || trade.noteResult);
+  const [noteIdea, setNoteIdea] = useState(trade.noteIdea || (!hasStructuredNotes ? trade.notes || "" : ""));
+  const [noteEmotion, setNoteEmotion] = useState(trade.noteEmotion || "");
+  const [noteResult, setNoteResult] = useState(trade.noteResult || "");
+  const [editNotes, setEditNotes] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [hoverSimilarId, setHoverSimilarId] = useState(null);
-  const saveNotes = () => { dispatch({ type: "UPDATE_TRADE", id: trade.id, data: { notes } }); setEditNotes(false); };
+  const saveNotes = () => {
+    const combinedNotes = [
+      noteIdea && `💡 Trade Idea / Plan\n${noteIdea}`,
+      noteEmotion && `❤️ Feelings & Emotions\n${noteEmotion}`,
+      noteResult && `📝 Result & Takeaways\n${noteResult}`,
+    ].filter(Boolean).join("\n\n");
+    dispatch({ type: "UPDATE_TRADE", id: trade.id, data: { noteIdea, noteEmotion, noteResult, notes: combinedNotes } });
+    setEditNotes(false);
+  };
   const col = outcomeColor(trade.outcome, trade.pnl);
   const pool = trades.filter(t => activeAccount === "all" || t.account === activeAccount);
   const poolStats = calcStats(pool);
@@ -3874,14 +3917,36 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
           <Card>
             <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
               <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 7 }}>📝 Notes</div>
-              {!editNotes && <Btn small variant="ghost" onClick={() => setEditNotes(true)}>+ Add</Btn>}
+              {!editNotes && <Btn small variant="ghost" onClick={() => setEditNotes(true)}>{hasStructuredNotes || trade.notes ? "Edit" : "+ Add"}</Btn>}
             </div>
             {editNotes ? (
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} style={{ background: C.surfaceHigh, border: `1px solid ${C.accent}`, borderRadius: 8, color: C.text, padding: 12, fontSize: 13, resize: "vertical", outline: "none", fontFamily: "inherit", width: "100%" }} />
-                <div style={{ display: "flex", gap: 8 }}><Btn small onClick={saveNotes}>Save</Btn><Btn small variant="ghost" onClick={() => { setNotes(trade.notes || ""); setEditNotes(false); }}>Cancel</Btn></div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6 }}>💡 Trade Idea / Plan</div>
+                  <textarea value={noteIdea} onChange={e => setNoteIdea(e.target.value)} rows={3} style={{ background: C.surfaceHigh, border: `1px solid ${C.accent}`, borderRadius: 8, color: C.text, padding: 12, fontSize: 13, resize: "vertical", outline: "none", fontFamily: "inherit", width: "100%" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6 }}>❤️ Feelings & Emotions</div>
+                  <textarea value={noteEmotion} onChange={e => setNoteEmotion(e.target.value)} rows={3} style={{ background: C.surfaceHigh, border: `1px solid ${C.accent}`, borderRadius: 8, color: C.text, padding: 12, fontSize: 13, resize: "vertical", outline: "none", fontFamily: "inherit", width: "100%" }} />
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: C.text, marginBottom: 6 }}>📝 Result & Takeaways</div>
+                  <textarea value={noteResult} onChange={e => setNoteResult(e.target.value)} rows={3} style={{ background: C.surfaceHigh, border: `1px solid ${C.accent}`, borderRadius: 8, color: C.text, padding: 12, fontSize: 13, resize: "vertical", outline: "none", fontFamily: "inherit", width: "100%" }} />
+                </div>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn small onClick={saveNotes}>Save</Btn>
+                  <Btn small variant="ghost" onClick={() => { setNoteIdea(trade.noteIdea || (!hasStructuredNotes ? trade.notes || "" : "")); setNoteEmotion(trade.noteEmotion || ""); setNoteResult(trade.noteResult || ""); setEditNotes(false); }}>Cancel</Btn>
+                </div>
               </div>
-            ) : <div style={{ fontSize: 13, color: trade.notes ? C.text : C.textDim, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{trade.notes || "Click + Add to start writing…"}</div>}
+            ) : hasStructuredNotes ? (
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                {trade.noteIdea && <div><div style={{ fontSize: 11, fontWeight: 700, color: C.textDim, marginBottom: 4 }}>💡 Trade Idea / Plan</div><div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{trade.noteIdea}</div></div>}
+                {trade.noteEmotion && <div><div style={{ fontSize: 11, fontWeight: 700, color: C.textDim, marginBottom: 4 }}>❤️ Feelings & Emotions</div><div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{trade.noteEmotion}</div></div>}
+                {trade.noteResult && <div><div style={{ fontSize: 11, fontWeight: 700, color: C.textDim, marginBottom: 4 }}>📝 Result & Takeaways</div><div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{trade.noteResult}</div></div>}
+              </div>
+            ) : trade.notes ? (
+              <div style={{ fontSize: 13, color: C.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{trade.notes}</div>
+            ) : <div style={{ fontSize: 13, color: C.textDim }}>Click + Add to start writing…</div>}
           </Card>
 
           {/* Playbook Setup */}
