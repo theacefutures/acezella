@@ -2688,7 +2688,7 @@ function Dashboard({ state, dispatch, setPage }) {
           <div key={t.id} onClick={() => setCalendarViewTradeId(t.id)}
             onMouseEnter={() => setHoverRecentId(t.id)}
             onMouseLeave={() => setHoverRecentId(null)}
-            style={{ display: "flex", alignItems: "center", padding: "11px 20px", borderBottom: `1px solid ${C.border}20`, gap: 14, cursor: "pointer", transition: "background 0.1s", background: hoverRecentId === t.id ? C.surfaceHigh : "transparent" }}>
+            style={{ display: "flex", alignItems: "center", padding: "11px 20px", borderTop: hoverRecentId === t.id ? `1px solid ${C.accent}` : "1px solid transparent", borderBottom: hoverRecentId === t.id ? `1px solid ${C.accent}` : `1px solid ${C.border}20`, gap: 14, cursor: "pointer", transition: "background 0.12s, border-color 0.12s", background: hoverRecentId === t.id ? C.surfaceHigh : "transparent" }}>
             <div style={{ width: 3, height: 36, background: outcomeColor(t.outcome, t.pnl), borderRadius: 2 }} />
             <Badge color={t.direction === "Long" ? C.accent : C.red}>{t.direction}</Badge>
             <div style={{ flex: 1 }}><span style={{ fontWeight: 700, fontSize: 15 }}>{t.symbol}</span><span style={{ marginLeft: 8, fontSize: 12, color: C.textMuted }}>{t.setup} · {t.session}</span></div>
@@ -2797,7 +2797,7 @@ function Journal({ state, dispatch, setPage }) {
                   const exitLabel = t.exitBehavior ? `${t.exitBehavior}${t.exitBehavior === "Late" && (t.outcome === "Loss" || t.pnl < 0) ? " (Loss)" : ""}` : "—";
                   return (
                     <tr key={t.id} onClick={() => setSelected(t.id)} onMouseEnter={() => setHoverId(t.id)} onMouseLeave={() => setHoverId(null)}
-                      style={{ cursor: "pointer", background: hoverId === t.id ? C.surfaceHigh : i % 2 ? C.bg + "60" : "transparent", borderBottom: `1px solid ${C.border}30` }}>
+                      style={{ cursor: "pointer", background: hoverId === t.id ? C.surfaceHigh : i % 2 ? C.bg + "60" : "transparent", borderTop: hoverId === t.id ? `1px solid ${C.accent}` : "1px solid transparent", borderBottom: hoverId === t.id ? `1px solid ${C.accent}` : `1px solid ${C.border}30`, transition: "background 0.12s, border-color 0.12s" }}>
                       {td(hoverId === t.id
                         ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: C.accentDim, color: C.accent, borderRadius: 7, padding: "4px 10px", fontWeight: 700, fontSize: 12 }}>👁 See details</span>
                         : fmtDate(t.date))}
@@ -3854,7 +3854,7 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
                 {similar.map(t => (
                   <div key={t.id} onClick={() => onSelectTrade(t.id)}
                     onMouseEnter={() => setHoverSimilarId(t.id)} onMouseLeave={() => setHoverSimilarId(null)}
-                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: hoverSimilarId === t.id ? C.surfaceHigh : C.bg, borderRadius: 9, cursor: "pointer", transition: "background 0.12s" }}>
+                    style={{ display: "flex", alignItems: "center", gap: 10, padding: "9px 12px", background: hoverSimilarId === t.id ? C.surfaceHigh : C.bg, borderRadius: 9, cursor: "pointer", border: `1px solid ${hoverSimilarId === t.id ? C.accent : "transparent"}`, transition: "background 0.12s, border-color 0.12s" }}>
                     <Badge color={t.direction === "Long" ? C.accent : C.red}>{t.direction}</Badge>
                     <div style={{ flex: 1, fontSize: 13 }}><b>{t.symbol}</b> <span style={{ color: C.textMuted }}>· {fmtDate(t.date)} · {t.setup}</span></div>
                     {hoverSimilarId === t.id ? (
@@ -4287,7 +4287,7 @@ function Calendar({ state, dispatch, setPage }) {
         </div>
         {recentTrades.length === 0 && <div style={{ padding: 28, textAlign: "center", color: C.textDim }}>No trades yet.</div>}
         {recentTrades.map(t => (
-          <div key={t.id} onClick={() => openTrade(t.id)} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 20px", borderBottom: `1px solid ${C.border}20`, cursor: "pointer", background: hoverId === t.id ? C.surfaceHigh : "transparent", transition: "background 0.12s" }}
+          <div key={t.id} onClick={() => openTrade(t.id)} style={{ display: "flex", alignItems: "center", gap: 14, padding: "13px 20px", borderTop: hoverId === t.id ? `1px solid ${C.accent}` : "1px solid transparent", borderBottom: hoverId === t.id ? `1px solid ${C.accent}` : `1px solid ${C.border}20`, cursor: "pointer", background: hoverId === t.id ? C.surfaceHigh : "transparent", transition: "background 0.12s, border-color 0.12s" }}
             onMouseEnter={() => setHoverId(t.id)} onMouseLeave={() => setHoverId(null)}>
             <div style={{ width: 34, height: 34, borderRadius: 8, background: outcomeColor(t.outcome, t.pnl) + "22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 15, color: outcomeColor(t.outcome, t.pnl) }}>{t.direction === "Long" ? "♤" : "♤"}</div>
             <div style={{ flex: 1 }}>
@@ -4325,7 +4325,7 @@ function Calendar({ state, dispatch, setPage }) {
                   {dt.length === 0 && <div style={{ color: C.textDim, fontSize: 13, padding: "10px 0" }}>No trades this day.</div>}
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {dt.map(t => (
-                      <div key={t.id} onClick={() => openTrade(t.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: C.surfaceHigh, borderRadius: 9, cursor: "pointer", border: `1px solid ${hoverId === t.id ? C.borderLight : "transparent"}`, transition: "border-color 0.12s" }}
+                      <div key={t.id} onClick={() => openTrade(t.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: hoverId === t.id ? C.surfaceHigh : C.surfaceHigh, borderRadius: 9, cursor: "pointer", border: `1px solid ${hoverId === t.id ? C.accent : "transparent"}`, transition: "border-color 0.12s" }}
                         onMouseEnter={() => setHoverId(t.id)} onMouseLeave={() => setHoverId(null)}>
                         <Badge color={t.direction === "Long" ? C.accent : C.red}>{t.direction}</Badge>
                         <div style={{ flex: 1 }}>
@@ -4365,7 +4365,7 @@ function Calendar({ state, dispatch, setPage }) {
                   {wTrades.length === 0 && <div style={{ color: C.textDim, fontSize: 13, padding: "10px 0" }}>No trades this week.</div>}
                   <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                     {wTrades.map(t => (
-                      <div key={t.id} onClick={() => openTrade(t.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: hoverId === t.id ? C.surfaceHigh + "cc" : C.surfaceHigh, borderRadius: 9, cursor: "pointer", transition: "background 0.12s" }}
+                      <div key={t.id} onClick={() => openTrade(t.id)} style={{ display: "flex", alignItems: "center", gap: 10, padding: "10px 12px", background: hoverId === t.id ? C.surfaceHigh + "cc" : C.surfaceHigh, borderRadius: 9, border: `1px solid ${hoverId === t.id ? C.accent : "transparent"}`, cursor: "pointer", transition: "background 0.12s, border-color 0.12s" }}
                         onMouseEnter={() => setHoverId(t.id)} onMouseLeave={() => setHoverId(null)}>
                         <span style={{ fontSize: 11, color: C.textDim, minWidth: 46 }}>{fmtDate(t.date).slice(0, 6)}</span>
                         <Badge color={t.direction === "Long" ? C.accent : C.red}>{t.direction}</Badge>
@@ -6377,7 +6377,7 @@ function LiveCapitalOverview({ state, dispatch, setPage }) {
                   {s.linkedTrades.slice(0, 8).map(t => (
                     <tr key={t.id} onClick={() => setPage && setPage("journal")}
                       onMouseEnter={() => setHoverLinkedId(t.id)} onMouseLeave={() => setHoverLinkedId(null)}
-                      style={{ borderBottom: `1px solid ${C.border}20`, cursor: setPage ? "pointer" : "default", background: hoverLinkedId === t.id ? C.surfaceHigh : "transparent", transition: "background 0.12s" }}>
+                      style={{ borderTop: hoverLinkedId === t.id ? `1px solid ${C.accent}` : "1px solid transparent", borderBottom: hoverLinkedId === t.id ? `1px solid ${C.accent}` : `1px solid ${C.border}20`, cursor: setPage ? "pointer" : "default", background: hoverLinkedId === t.id ? C.surfaceHigh : "transparent", transition: "background 0.12s, border-color 0.12s" }}>
                       <td style={{ padding: "9px 12px", fontSize: 13, whiteSpace: "nowrap" }}>
                         {hoverLinkedId === t.id && setPage
                           ? <span style={{ display: "inline-flex", alignItems: "center", gap: 6, background: C.accentDim, color: C.accent, borderRadius: 7, padding: "4px 10px", fontWeight: 700, fontSize: 12 }}>👁 See details</span>
