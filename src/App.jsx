@@ -2042,15 +2042,12 @@ function ImageLightbox({ images, index, onClose, onNavigate, labels, title = "Tr
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, index, images]);
 
-  // Mouse-wheel zoom, centered under the cursor. Scrolling out past 1x
-  // snaps back to the un-zoomed, un-panned view.
+  // Wheel only zooms IN (scroll up). Scrolling down is ignored — zooming
+  // back out is done via double-click or the Reset badge, not the wheel.
   const handleWheel = e => {
     e.preventDefault(); e.stopPropagation();
-    setZoom(z => {
-      const next = Math.min(5, Math.max(1, z - e.deltaY * 0.0015 * z));
-      if (next <= 1.01) setOffset({ x: 0, y: 0 });
-      return next;
-    });
+    if (e.deltaY >= 0) return; // ignore scroll-down / zoom-out gestures
+    setZoom(z => Math.min(5, z + Math.abs(e.deltaY) * 0.0015 * z));
   };
   const handleMouseDown = e => {
     if (zoom <= 1) return;
@@ -2066,6 +2063,7 @@ function ImageLightbox({ images, index, onClose, onNavigate, labels, title = "Tr
   };
   const stopDrag = () => { draggingRef.current = false; };
   const resetZoom = e => { e && e.stopPropagation(); setZoom(1); setOffset({ x: 0, y: 0 }); };
+  const toggleZoom = e => { e && e.stopPropagation(); if (zoom > 1) resetZoom(); else { setZoom(2.5); setOffset({ x: 0, y: 0 }); } };
 
   const url = Array.isArray(images) ? images[index] : images;
   const label = labels && labels[index];
@@ -2095,7 +2093,7 @@ function ImageLightbox({ images, index, onClose, onNavigate, labels, title = "Tr
             {title}{label ? <span style={{ color: C.textMuted, fontWeight: 600 }}> · {label}</span> : null}
           </div>
           <div style={{ flex: 1, textAlign: "center", fontSize: 12, color: C.textDim, minWidth: 220 }}>
-            Scroll/pinch to zoom · Drag to pan · Double-click to reset
+            Scroll to zoom in · Drag to pan · Double-click to reset
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <button onClick={handleCopy} style={{ ...headerBtn, background: `linear-gradient(90deg, ${C.blue}, ${C.purple})`, color: "#fff" }}>
@@ -2116,7 +2114,7 @@ function ImageLightbox({ images, index, onClose, onNavigate, labels, title = "Tr
             onMouseMove={handleMouseMove}
             onMouseUp={stopDrag}
             onMouseLeave={stopDrag}
-            onDoubleClick={resetZoom}
+            onDoubleClick={toggleZoom}
             draggable={false}
             style={{ maxWidth: "94%", maxHeight: "94%", objectFit: "contain", transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transition: draggingRef.current ? "none" : "transform 0.08s ease-out", userSelect: "none", touchAction: "none" }} />
 
