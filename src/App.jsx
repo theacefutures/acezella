@@ -2022,6 +2022,7 @@ function ImageLightbox({ images, index, onClose, onNavigate, labels }) {
   const hasMultiple = Array.isArray(images) && images.length > 1;
   const [zoom, setZoom] = useState(1);
   const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [copyState, setCopyState] = useState("idle"); // idle | copying | done | error
   const draggingRef = useRef(false);
   const lastPosRef = useRef({ x: 0, y: 0 });
 
@@ -2068,30 +2069,84 @@ function ImageLightbox({ images, index, onClose, onNavigate, labels }) {
 
   const url = Array.isArray(images) ? images[index] : images;
   const label = labels && labels[index];
+
+  // Copies the current chart image to the clipboard as PNG data.
+  const handleCopy = async e => {
+    e && e.stopPropagation();
+    if (copyState === "copying") return;
+    setCopyState("copying");
+    try {
+      const res = await fetch(url, { mode: "cors" });
+      const blob = await res.blob();
+      // Clipboard image writes require PNG — re-encode via canvas if needed.
+      const pngBlob = blob.type === "image/png" ? blob : await new Promise(resolve => {
+        const img = new Image();
+        img.crossOrigin = "anonymous";
+        img.onload = () => {
+          const canvas = document.createElement("canvas");
+          canvas.width = img.naturalWidth; canvas.height = img.naturalHeight;
+          canvas.getContext("2d").drawImage(img, 0, 0);
+          canvas.toBlob(b => resolve(b), "image/png");
+        };
+        img.onerror = () => resolve(null);
+        img.src = URL.createObjectURL(blob);
+      });
+      if (!pngBlob) throw new Error("convert failed");
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": pngBlob })]);
+      setCopyState("done");
+    } catch {
+      setCopyState("error");
+    } finally {
+      setTimeout(() => setCopyState("idle"), 1600);
+    }
+  };
+
+  const openNewTab = e => { e && e.stopPropagation(); window.open(url, "_blank", "noopener,noreferrer"); };
+
+  const headerBtn = { display: "flex", alignItems: "center", gap: 6, padding: "8px 14px", borderRadius: 20, border: "1px solid #ffffff2a", background: "#ffffff14", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer", whiteSpace: "nowrap" };
+
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000d", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, cursor: "zoom-out", overflow: "hidden" }}>
-      <img src={url} alt=""
-        onClick={e => e.stopPropagation()}
-        onWheel={handleWheel}
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={stopDrag}
-        onMouseLeave={stopDrag}
-        onDoubleClick={resetZoom}
-        draggable={false}
-        style={{ maxWidth: "95vw", maxHeight: "95vh", borderRadius: 10, boxShadow: "0 20px 60px #000a", objectFit: "contain", transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transition: draggingRef.current ? "none" : "transform 0.08s ease-out", cursor: zoom > 1 ? "grab" : "zoom-in", userSelect: "none", touchAction: "none" }} />
-      {label && <div style={{ position: "fixed", top: 24, left: 24, background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 13, fontWeight: 800 }}>{label}</div>}
-      {zoom > 1 && (
-        <div onClick={resetZoom} title="Reset zoom" style={{ position: "fixed", top: 24, right: 74, background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{Math.round(zoom * 100)}% · Reset</div>
-      )}
-      <button onClick={onClose} style={{ position: "fixed", top: 20, right: 20, background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: "50%", width: 42, height: 42, color: "#fff", fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
-      {hasMultiple && (
-        <>
-          <button onClick={goPrev} aria-label="Previous image" style={{ position: "fixed", left: 20, top: "50%", transform: "translateY(-50%)", background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: "50%", width: 46, height: 46, color: "#fff", fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
-          <button onClick={goNext} aria-label="Next image" style={{ position: "fixed", right: 20, top: "50%", transform: "translateY(-50%)", background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: "50%", width: 46, height: 46, color: "#fff", fontSize: 22, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
-          <div style={{ position: "fixed", bottom: 24, left: "50%", transform: "translateX(-50%)", background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 13, fontWeight: 600 }}>{index + 1} / {images.length}</div>
-        </>
-      )}
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20, overflow: "hidden" }}>
+      <div className="fade-in" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 980, maxHeight: "92vh", display: "flex", flexDirection: "column", background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 16, boxShadow: "0 24px 70px #000a", overflow: "hidden" }}>
+        {/* Header bar */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "14px 18px", borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+          <div style={{ fontSize: 15, fontWeight: 800, color: C.text }}>Trade Screenshot{label ? <span style={{ color: C.textMuted, fontWeight: 600 }}> · {label}</span> : null}</div>
+          <div style={{ flex: 1, textAlign: "center", fontSize: 12, color: C.textDim, minWidth: 180 }}>
+            Scroll/pinch to zoom · Drag to pan · Double-click to reset
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <button onClick={handleCopy} style={{ ...headerBtn, background: "linear-gradient(90deg,#4ec8ff22,#8b5cf622)", borderColor: "#8b5cf655" }}>
+              {copyState === "copying" ? "Copying…" : copyState === "done" ? "Copied ✓" : copyState === "error" ? "Copy failed" : <>⧉ Copy</>}
+            </button>
+            <button onClick={openNewTab} style={{ ...headerBtn, background: `${C.accentDim}`, borderColor: `${C.accent}55` }}>↗ New Tab</button>
+            <button onClick={onClose} aria-label="Close" style={{ width: 34, height: 34, borderRadius: 8, border: "1px solid #ffffff2a", background: "#ffffff14", color: "#fff", fontSize: 18, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+          </div>
+        </div>
+
+        {/* Image stage */}
+        <div style={{ position: "relative", flex: 1, minHeight: 0, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", overflow: "hidden", padding: 24 }}>
+          <img src={url} alt=""
+            onWheel={handleWheel}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={stopDrag}
+            onMouseLeave={stopDrag}
+            onDoubleClick={resetZoom}
+            draggable={false}
+            style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8, objectFit: "contain", transform: `translate(${offset.x}px, ${offset.y}px) scale(${zoom})`, transition: draggingRef.current ? "none" : "transform 0.08s ease-out", cursor: zoom > 1 ? "grab" : "zoom-in", userSelect: "none", touchAction: "none" }} />
+
+          {zoom > 1 && (
+            <div onClick={resetZoom} title="Reset zoom" style={{ position: "absolute", top: 14, right: 14, background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{Math.round(zoom * 100)}% · Reset</div>
+          )}
+          {hasMultiple && (
+            <>
+              <button onClick={goPrev} aria-label="Previous image" style={{ position: "absolute", left: 14, top: "50%", transform: "translateY(-50%)", background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: "50%", width: 42, height: 42, color: "#fff", fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>‹</button>
+              <button onClick={goNext} aria-label="Next image" style={{ position: "absolute", right: 14, top: "50%", transform: "translateY(-50%)", background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: "50%", width: 42, height: 42, color: "#fff", fontSize: 20, cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center" }}>›</button>
+              <div style={{ position: "absolute", bottom: 14, left: "50%", transform: "translateX(-50%)", background: "#ffffff22", border: "1px solid #ffffff44", borderRadius: 20, padding: "6px 14px", color: "#fff", fontSize: 13, fontWeight: 600 }}>{index + 1} / {images.length}</div>
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
