@@ -2099,8 +2099,19 @@ function ImageLightbox({ images, index, onClose, onNavigate, labels, title = "Tr
 
   const headerBtn = { border: "none", borderRadius: 20, padding: "7px 14px", fontSize: 12.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" };
 
+  // Block wheel-driven scroll chaining to the page behind this popup. The
+  // image itself still zooms (its own onWheel below calls preventDefault),
+  // but wheeling over the header/backdrop/anywhere else in the lightbox
+  // must not leak through to whatever scrollable page is rendering behind it.
+  const blockWheel = e => { e.preventDefault(); e.stopPropagation(); };
+  useEffect(() => {
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = prevOverflow; };
+  }, []);
+
   return (
-    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+    <div onClick={onClose} onWheel={blockWheel} style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div onClick={e => e.stopPropagation()} style={{ display: "flex", flexDirection: "column", width: "min(94vw, 1100px)", height: "min(88vh, 780px)", background: C.modalBg || C.surface, border: `1px solid ${C.border}`, borderRadius: 16, boxShadow: "0 24px 70px #000b", overflow: "hidden" }}>
         {/* Header bar */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "14px 18px", borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>
