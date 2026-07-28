@@ -700,6 +700,16 @@ function reducer(state, action) {
     case "DELETE_ACCOUNT": next = { ...state, accounts: state.accounts.filter(a => a.id !== action.id), trades: state.trades.filter(t => t.account !== action.id) }; break;
     case "ADD_STRATEGY": next = { ...state, strategies: [...state.strategies, action.strategy] }; break;
     case "DELETE_STRATEGY": next = { ...state, strategies: state.strategies.filter(s => s.id !== action.id) }; break;
+    case "UPDATE_STRATEGY": {
+      const oldStrategy = state.strategies.find(x => x.id === action.id);
+      const renamed = oldStrategy && action.data.name && action.data.name !== oldStrategy.name;
+      next = {
+        ...state,
+        strategies: state.strategies.map(x => x.id === action.id ? { ...x, ...action.data } : x),
+        trades: renamed ? state.trades.map(t => t.setup === oldStrategy.name ? { ...t, setup: action.data.name } : t) : state.trades,
+      };
+      break;
+    }
     case "ADD_SESSION": next = { ...state, sessions: [...state.sessions, action.name] }; break;
     case "DELETE_SESSION": next = { ...state, sessions: state.sessions.filter(s => s !== action.name) }; break;
     case "ADD_EMOTION": next = { ...state, emotions: [...state.emotions, action.name] }; break;
@@ -4122,8 +4132,292 @@ function BreakdownSection({ icon, title, items, colorFn }) {
   );
 }
 
+// ─── PLAYBOOK DETAIL MODAL HELPERS ────────────────────────────────────────────
+// Groups a setup's trades by an arbitrary field (timeframe / session / risk)
+// and computes full calcStats() per group, for the Playbook detail modal's
+// per-dimension tabs.
+function groupedStatsBreakdown(trades, field) {
+  const groups = {};
+  trades.forEach(t => { const k = t[field]; if (!k) return; (groups[k] = groups[k] || []).push(t); });
+  return Object.entries(groups).map(([label, ts]) => ({ label, trades: ts, stats: calcStats(ts) })).sort((a, b) => b.trades.length - a.trades.length);
+}
+
+function PlaybookStatBlock({ stats, count }) {
+  return (
+    <>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, marginBottom: 12 }}>
+        <StatCard label="Win Rate" value={`${stats.winRate.toFixed(1)}%`} color={stats.winRate >= 50 ? C.accent : C.text} />
+        <StatCard label="Net P&L" value={fmt$(stats.netPnl)} color={stats.netPnl >= 0 ? C.accent : C.red} />
+        <StatCard label="Profit Factor" value={stats.profitFactor >= 99 ? "∞" : stats.profitFactor.toFixed(2)} />
+        <StatCard label="Total Trades" value={count} />
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+        <Card style={{ padding: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: C.accent, fontWeight: 700, fontSize: 13, marginBottom: 12 }}>↗ Winners</div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 8 }}><span style={{ color: C.textMuted }}>Count</span><b>{stats.wins}</b></div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.textMuted }}>Avg Win</span><b className="mono" style={{ color: C.accent }}>{fmt$(stats.avgWin)}</b></div>
+        </Card>
+        <Card style={{ padding: 16 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 6, color: C.red, fontWeight: 700, fontSize: 13, marginBottom: 12 }}>↘ Losers</div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, marginBottom: 8 }}><span style={{ color: C.textMuted }}>Count</span><b>{stats.losses}</b></div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13 }}><span style={{ color: C.textMuted }}>Avg Loss</span><b className="mono" style={{ color: C.red }}>{fmt$(-stats.avgLoss)}</b></div>
+        </Card>
+      </div>
+      <Card style={{ padding: "14px 18px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+        <span style={{ fontSize: 13, color: C.textMuted, fontWeight: 600 }}>Expectancy</span>
+        <span className="mono" style={{ fontSize: 18, fontWeight: 800, color: stats.expectancy >= 0 ? C.accent : C.red }}>{fmt$(stats.expectancy)}</span>
+      </Card>
+    </>
+  );
+}
+
+function PlaybookGroupedTab({ trades, field }) {
+  const groups = groupedStatsBreakdown(trades, field);
+  if (!groups.length) return <div style={{ padding: "34px 0", textAlign: "center", color: C.textDim, fontSize: 13 }}>No trades with this field logged yet.</div>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
+      {groups.map(g => (
+        <div key={g.label}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+            <Badge color={C.blue}>{g.label}</Badge>
+            <span style={{ fontSize: 12, color: C.textDim }}>{g.trades.length} trade{g.trades.length !== 1 ? "s" : ""}</span>
+          </div>
+          <PlaybookStatBlock stats={g.stats} count={g.trades.length} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// One editable rule/criteria list (Entry Criteria / Exit Criteria / Market
+// Conditions) used inside the Playbook edit form.
+function CriteriaListEditor({ label, color, items, onChange }) {
+  const update = (i, v) => onChange(items.map((it, j) => j === i ? v : it));
+  const remove = (i) => onChange(items.filter((_, j) => j !== i));
+  const add = () => onChange([...items, ""]);
+  return (
+    <div style={{ marginBottom: 18 }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
+        <div style={{ flex: 1, fontSize: 13, fontWeight: 800, color }}>{label}</div>
+        <button onClick={add} style={{ background: "none", border: "none", color, fontSize: 12.5, fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: 4 }}>+ Add Rule</button>
+      </div>
+      {items.length === 0 && <div style={{ fontSize: 12, color: C.textDim, marginBottom: 8 }}>No rules yet.</div>}
+      {items.map((it, i) => (
+        <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+          <span style={{ color: C.textDim, fontSize: 13, cursor: "grab", flexShrink: 0 }}>⠿</span>
+          <input value={it} onChange={e => update(i, e.target.value)} placeholder={`e.g. ${label.replace(/s$/, "")} rule…`}
+            style={{ flex: 1, minWidth: 0, background: C.surfaceHigh, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, padding: "9px 12px", fontSize: 13, outline: "none" }} />
+          <button onClick={() => remove(i)} style={{ background: C.redDim, border: "none", borderRadius: 7, color: C.red, width: 30, height: 30, cursor: "pointer", flexShrink: 0, fontSize: 14 }}>🗑</button>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// Edit form for a Playbook setup — name, description, screenshot, color,
+// and the three criteria lists (Entry / Exit / Market Conditions).
+function EditPlaybookForm({ s, dispatch, onDone, onCancel }) {
+  const [form, setForm] = useState({
+    name: s.name || "", description: s.description || "", color: s.color || ACCOUNT_COLORS[0],
+    screenshot: s.screenshot || null,
+    entryCriteria: s.entryCriteria && s.entryCriteria.length ? s.entryCriteria : (s.rules || []),
+    exitCriteria: s.exitCriteria || [],
+    marketConditions: s.marketConditions || [],
+  });
+  const fileRef = useRef();
+  const set = k => v => setForm(f => ({ ...f, [k]: v }));
+  const handleShot = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = e => set("screenshot")(e.target.result);
+    reader.readAsDataURL(file);
+  };
+  const save = () => {
+    if (!form.name.trim()) return;
+    dispatch({
+      type: "UPDATE_STRATEGY", id: s.id, data: {
+        name: form.name.trim(), description: form.description, color: form.color, screenshot: form.screenshot,
+        entryCriteria: form.entryCriteria.filter(Boolean), exitCriteria: form.exitCriteria.filter(Boolean), marketConditions: form.marketConditions.filter(Boolean),
+        rules: form.entryCriteria.filter(Boolean),
+      },
+    });
+    onDone();
+  };
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: C.textDim, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2, marginBottom: 14 }}>General Information</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14, marginBottom: 20 }}>
+        <Inp label="Playbook Name" value={form.name} onChange={set("name")} placeholder="e.g. Breakout" />
+        <div>
+          <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 6 }}>Description / Label</label>
+          <textarea value={form.description} onChange={e => set("description")(e.target.value)} rows={3} placeholder="What is this setup, and when does it apply?"
+            style={{ width: "100%", background: C.surfaceHigh, border: `1px solid ${C.border}`, borderRadius: 8, color: C.text, padding: "10px 14px", fontSize: 13.5, outline: "none", resize: "vertical", fontFamily: "inherit", boxSizing: "border-box" }} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 6 }}>Setup Screenshot (optional)</label>
+          {form.screenshot ? (
+            <div style={{ position: "relative", width: "100%", maxWidth: 320 }}>
+              <img src={form.screenshot} alt="" style={{ width: "100%", borderRadius: 10, border: `1px solid ${C.border}`, display: "block" }} />
+              <button onClick={() => set("screenshot")(null)} style={{ position: "absolute", top: 8, right: 8, background: "#000b", border: "none", borderRadius: "50%", color: "#fff", width: 24, height: 24, cursor: "pointer" }}>×</button>
+            </div>
+          ) : (
+            <div onClick={() => fileRef.current?.click()} style={{ border: `2px dashed ${C.border}`, borderRadius: 10, padding: "28px 16px", textAlign: "center", cursor: "pointer", color: C.textDim, fontSize: 12.5, maxWidth: 320 }}>⬆ Click to upload a reference chart</div>
+          )}
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => handleShot(e.target.files[0])} />
+        </div>
+        <div>
+          <label style={{ fontSize: 11, color: C.textMuted, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1, display: "block", marginBottom: 8 }}>Color</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            {ACCOUNT_COLORS.map(col => <div key={col} onClick={() => set("color")(col)} style={{ width: 30, height: 30, borderRadius: 9, background: col, cursor: "pointer", border: form.color === col ? "3px solid #fff" : "3px solid transparent", boxShadow: form.color === col ? `0 0 0 1px ${col}` : "none" }} />)}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
+        <div style={{ flex: 1, fontSize: 11, color: C.textDim, fontWeight: 700, textTransform: "uppercase", letterSpacing: 1.2 }}>Trading Playbook Rules</div>
+        <div style={{ fontSize: 11, color: C.textDim }}>List your rules, track and optimize your playbook</div>
+      </div>
+      <CriteriaListEditor label="Entry Criteria" color={C.accent} items={form.entryCriteria} onChange={set("entryCriteria")} />
+      <CriteriaListEditor label="Exit Criteria" color={C.red} items={form.exitCriteria} onChange={set("exitCriteria")} />
+      <CriteriaListEditor label="Market Conditions" color={C.blue} items={form.marketConditions} onChange={set("marketConditions")} />
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 10 }}>
+        <Btn variant="ghost" onClick={onCancel}>Cancel</Btn>
+        <Btn variant="success" onClick={save} disabled={!form.name.trim()}>Update Playbook</Btn>
+      </div>
+    </div>
+  );
+}
+
+const PLAYBOOK_TABS = ["Performance", "Time Frames", "Sessions", "Risk", "Trend", "Rules", "Trades"];
+
+function PlaybookDetailModal({ s, trades, state, dispatch, onClose }) {
+  const [tab, setTab] = useState("Performance");
+  const [editing, setEditing] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const st = trades.filter(t => t.setup === s.name);
+  const stats = calcStats(st);
+  const color = s.color || C.accent;
+  const entryCriteria = s.entryCriteria && s.entryCriteria.length ? s.entryCriteria : (s.rules || []);
+  const exitCriteria = s.exitCriteria || [];
+  const marketConditions = s.marketConditions || [];
+  const trendBreakdown = buildFieldBreakdown(st, "trendBias", trendColor);
+  const trendChartData = trendBreakdown.map(b => ({ label: b.label, value: b.net, count: b.w + b.l, winRate: b.winPct }));
+  const sortedTrades = [...st].sort((a, b) => new Date(b.date) - new Date(a.date));
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 250, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="fade-in" style={{ background: C.modalBg, border: `1px solid ${C.borderLight}`, borderRadius: 18, padding: 26, width: "100%", maxWidth: 700, maxHeight: "92vh", overflowY: "auto", boxSizing: "border-box" }}>
+        {/* Header */}
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 12, marginBottom: 16 }}>
+          <span style={{ width: 10, height: 10, borderRadius: "50%", background: color, marginTop: 8, flexShrink: 0 }} />
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 20 }}>{s.name}</div>
+            {s.description && <div style={{ fontSize: 12.5, color: C.textMuted, marginTop: 6, lineHeight: 1.6 }}>{s.description}</div>}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+            <button onClick={() => setEditing(e => !e)} title="Edit" style={{ background: C.surfaceHigh, border: `1px solid ${C.border}`, borderRadius: 9, color: editing ? C.accent : C.textMuted, width: 34, height: 34, cursor: "pointer", fontSize: 14 }}>✏️</button>
+            <button onClick={() => setConfirmDelete(true)} title="Delete" style={{ background: C.redDim, border: `1px solid ${C.red}44`, borderRadius: 9, color: C.red, width: 34, height: 34, cursor: "pointer", fontSize: 14 }}>🗑️</button>
+            <button onClick={onClose} title="Close" style={{ background: C.accentDim, border: `1px solid ${C.accent}55`, borderRadius: 9, color: C.accent, width: 34, height: 34, cursor: "pointer", fontSize: 16 }}>×</button>
+          </div>
+        </div>
+
+        {confirmDelete && (
+          <div className="fade-in" style={{ background: C.redDim, border: `1px solid ${C.red}55`, borderRadius: 10, padding: 14, marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+            <div style={{ fontSize: 13, color: C.text }}>Delete <b>{s.name}</b>? Trades already logged with this setup keep their tag, but it disappears from the Playbook.</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <Btn small variant="danger" onClick={() => { dispatch({ type: "DELETE_STRATEGY", id: s.id }); onClose(); }} style={{ flex: 1, justifyContent: "center" }}>Yes, Delete</Btn>
+              <Btn small variant="ghost" onClick={() => setConfirmDelete(false)} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
+            </div>
+          </div>
+        )}
+
+        {editing ? (
+          <EditPlaybookForm s={s} dispatch={dispatch} onDone={() => setEditing(false)} onCancel={() => setEditing(false)} />
+        ) : (
+          <>
+            {/* Tabs */}
+            <div style={{ display: "flex", gap: 4, overflowX: "auto", borderBottom: `1px solid ${C.border}`, marginBottom: 20, paddingBottom: 2 }}>
+              {PLAYBOOK_TABS.map(t => (
+                <button key={t} onClick={() => setTab(t)} style={{
+                  background: "none", border: "none", cursor: "pointer", whiteSpace: "nowrap",
+                  padding: "9px 12px", fontSize: 12.5, fontWeight: 700,
+                  color: tab === t ? C.accent : C.textMuted,
+                  borderBottom: tab === t ? `2px solid ${C.accent}` : "2px solid transparent", marginBottom: -2,
+                }}>{t}{t === "Trades" ? ` (${st.length})` : ""}</button>
+              ))}
+            </div>
+
+            {tab === "Performance" && <PlaybookStatBlock stats={stats} count={st.length} />}
+            {tab === "Time Frames" && <PlaybookGroupedTab trades={st} field="timeframe" />}
+            {tab === "Sessions" && <PlaybookGroupedTab trades={st} field="session" />}
+            {tab === "Risk" && <PlaybookGroupedTab trades={st} field="risk" />}
+
+            {tab === "Trend" && (
+              trendBreakdown.length === 0 ? <div style={{ padding: "34px 0", textAlign: "center", color: C.textDim, fontSize: 13 }}>No trend alignment data logged yet.</div> : (
+                <div style={{ display: "grid", gridTemplateColumns: "1.3fr 1fr", gap: 18 }}>
+                  <div>
+                    <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 10, fontWeight: 700 }}>P&L by Trend Alignment</div>
+                    <GridBarChart data={trendChartData} height={240} colorFn={d => trendColor(d.label)} />
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 10, fontWeight: 700 }}>Breakdown</div>
+                    <BreakdownTable items={trendBreakdown} />
+                  </div>
+                </div>
+              )
+            )}
+
+            {tab === "Rules" && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
+                {[["Entry Criteria", C.accent, entryCriteria], ["Exit Criteria", C.red, exitCriteria], ["Market Conditions", C.blue, marketConditions]].map(([label, col, items]) => (
+                  <div key={label}>
+                    <div style={{ fontSize: 13, fontWeight: 800, color: col, marginBottom: 10 }}>{label}</div>
+                    {items.length === 0 ? (
+                      <div style={{ fontSize: 12.5, color: C.textDim }}>No rules added yet.</div>
+                    ) : (
+                      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                        {items.map((r, i) => (
+                          <div key={i} style={{ display: "flex", alignItems: "flex-start", gap: 10, background: C.bg, border: `1px solid ${C.border}`, borderRadius: 9, padding: "10px 14px" }}>
+                            <span style={{ color: col, fontSize: 13, marginTop: 1, flexShrink: 0 }}>●</span>
+                            <span style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>{r}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {tab === "Trades" && (
+              sortedTrades.length === 0 ? <div style={{ padding: "34px 0", textAlign: "center", color: C.textDim, fontSize: 13 }}>No trades logged with this setup yet.</div> : (
+                <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                  {sortedTrades.map(t => (
+                    <Card key={t.id} style={{ padding: 14 }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                        <Badge color={t.direction === "Long" ? C.accent : C.red}>{t.direction === "Long" ? "LONG" : "SHORT"}</Badge>
+                        <span style={{ fontWeight: 800, fontSize: 14 }}>{t.symbol}</span>
+                        <div style={{ flex: 1 }} />
+                        <span className="mono" style={{ fontWeight: 800, fontSize: 15, color: outcomeColor(t.outcome, t.pnl) }}>{fmt$(t.pnl)}</span>
+                      </div>
+                      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, fontSize: 12 }}>
+                        <div><div style={{ color: C.textDim, marginBottom: 2 }}>Date</div><div style={{ color: C.textMuted }}>{fmtDate(t.date)}</div></div>
+                        <div><div style={{ color: C.textDim, marginBottom: 2 }}>Entry</div><div style={{ color: C.textMuted }}>{t.entry ? `$${t.entry.toLocaleString()}` : "—"}</div></div>
+                        <div><div style={{ color: C.textDim, marginBottom: 2 }}>Exit</div><div style={{ color: C.textMuted }}>{t.exit ? `$${t.exit.toLocaleString()}` : "—"}</div></div>
+                      </div>
+                    </Card>
+                  ))}
+                </div>
+              )
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── STRATEGY CARD ────────────────────────────────────────────────────────────
-function StrategyCard({ s, trades, dispatch }) {
+function StrategyCard({ s, trades, dispatch, onOpen }) {
   const st = trades.filter(t => t.setup === s.name);
   const stats = calcStats(st);
   const winPct = Math.round(stats.winRate);
@@ -4136,7 +4430,7 @@ function StrategyCard({ s, trades, dispatch }) {
     <Card style={{ borderTop: `3px solid ${color}`, padding: 22, position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
         <div style={{ width: 9, height: 9, borderRadius: "50%", background: color, marginRight: 9 }} />
-        <div style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>{s.name}</div>
+        <div onClick={() => onOpen(s)} style={{ fontWeight: 800, fontSize: 17, flex: 1, cursor: "pointer" }}>{s.name}</div>
         <Badge color={C.textMuted}>{st.length} trades</Badge>
       </div>
       {s.description && <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 16, lineHeight: 1.5 }}>{s.description}</div>}
@@ -4174,7 +4468,10 @@ function StrategyCard({ s, trades, dispatch }) {
       <BreakdownSection icon="🕐" title="Time Frame Entry" items={tfItems} />
       <BreakdownSection icon="🌐" title="Trading Session" items={sessionItems} />
       <BreakdownSection icon="⚠" title="Risk Meter" items={riskItems} colorFn={riskColor} />
-      <button onClick={() => dispatch({ type: "DELETE_STRATEGY", id: s.id })} style={{ marginTop: 6, width: "100%", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 7, color: C.textDim, fontSize: 11, padding: "6px", cursor: "pointer" }}>Remove Strategy</button>
+      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+        <Btn small variant="ghost" onClick={() => onOpen(s)} style={{ flex: 1, justifyContent: "center" }}>📖 View Full Details</Btn>
+        <button onClick={() => dispatch({ type: "DELETE_STRATEGY", id: s.id })} style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 7, color: C.textDim, fontSize: 11, padding: "0 12px", cursor: "pointer" }}>Remove</button>
+      </div>
     </Card>
   );
 }
@@ -4183,9 +4480,11 @@ function StrategyCard({ s, trades, dispatch }) {
 function Strategies({ state, dispatch }) {
   const { strategies, trades } = state;
   const [adding, setAdding] = useState(false), [form, setForm] = useState({ name: "", description: "", color: ACCOUNT_COLORS[0], rules: [""] });
+  const [viewingId, setViewingId] = useState(null);
   const atCap = !canAddSetup(state);
   const save = () => { if (!form.name || atCap) return; dispatch({ type: "ADD_STRATEGY", strategy: { id: `s${Date.now()}`, ...form, rules: form.rules.filter(Boolean) } }); setForm({ name: "", description: "", color: ACCOUNT_COLORS[0], rules: [""] }); setAdding(false); };
   const openAdd = () => atCap ? dispatch({ type: "OPEN_MODAL", modal: "upgrade" }) : setAdding(a => !a);
+  const viewingStrategy = viewingId ? strategies.find(s => s.id === viewingId) : null;
   return (
     <div className="fade-in" style={{ height: "100%", overflowY: "auto", padding: 28, display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -4221,11 +4520,12 @@ function Strategies({ state, dispatch }) {
         </Card>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 18 }}>
-        {strategies.map(s => <StrategyCard key={s.id} s={s} trades={trades} dispatch={dispatch} />)}
+        {strategies.map(s => <StrategyCard key={s.id} s={s} trades={trades} dispatch={dispatch} onOpen={st => setViewingId(st.id)} />)}
         <Card onClick={openAdd} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 200, cursor: "pointer", borderStyle: "dashed" }}>
           <div style={{ fontSize: 28, color: C.textDim, marginBottom: 6 }}>{atCap ? "🔒" : "+"}</div><div style={{ color: C.textMuted, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>New Setup {atCap && <PlusBadge small />}</div>
         </Card>
       </div>
+      {viewingStrategy && <PlaybookDetailModal s={viewingStrategy} trades={trades} state={state} dispatch={dispatch} onClose={() => setViewingId(null)} />}
     </div>
   );
 }
