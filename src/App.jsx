@@ -2052,12 +2052,17 @@ function ImageLightbox({ images, index, onClose, onNavigate, labels, title = "Tr
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose, index, images]);
 
-  // Wheel only zooms IN (scroll up). Scrolling down is ignored — zooming
-  // back out is done via double-click or the Reset badge, not the wheel.
+  // Wheel zooms in (scroll up) and out (scroll down), clamped 1x–5x. Panning
+  // offset resets automatically once zoomed all the way back out to 1x.
   const handleWheel = e => {
     e.preventDefault(); e.stopPropagation();
-    if (e.deltaY >= 0) return; // ignore scroll-down / zoom-out gestures
-    setZoom(z => Math.min(5, z + Math.abs(e.deltaY) * 0.0015 * z));
+    const factor = 1 + Math.abs(e.deltaY) * 0.0015;
+    setZoom(z => {
+      const next = e.deltaY < 0 ? z * factor : z / factor;
+      const clamped = Math.min(5, Math.max(1, next));
+      if (clamped <= 1) setOffset({ x: 0, y: 0 });
+      return clamped;
+    });
   };
   const handleMouseDown = e => {
     if (zoom <= 1) return;
@@ -2103,7 +2108,7 @@ function ImageLightbox({ images, index, onClose, onNavigate, labels, title = "Tr
             {title}{label ? <span style={{ color: C.textMuted, fontWeight: 600 }}> · {label}</span> : null}
           </div>
           <div style={{ flex: 1, textAlign: "center", fontSize: 12, color: C.textDim, minWidth: 220 }}>
-            Scroll to zoom in · Drag to pan · Double-click to reset
+            Scroll to zoom in/out · Drag to pan · Double-click to reset
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
             <button onClick={handleCopy} style={{ ...headerBtn, background: `linear-gradient(90deg, ${C.blue}, ${C.purple})`, color: "#fff" }}>
@@ -4392,12 +4397,13 @@ function PlaybookDetailModal({ s, trades, state, dispatch, onClose }) {
               sortedTrades.length === 0 ? <div style={{ padding: "34px 0", textAlign: "center", color: C.textDim, fontSize: 13 }}>No trades logged with this setup yet.</div> : (
                 <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                   {sortedTrades.map(t => (
-                    <Card key={t.id} style={{ padding: 14 }}>
+                    <Card key={t.id} onClick={() => dispatch({ type: "OPEN_MODAL", modal: { type: "add_trade", trade: t } })} style={{ padding: 14 }}>
                       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
                         <Badge color={t.direction === "Long" ? C.accent : C.red}>{t.direction === "Long" ? "LONG" : "SHORT"}</Badge>
                         <span style={{ fontWeight: 800, fontSize: 14 }}>{t.symbol}</span>
                         <div style={{ flex: 1 }} />
                         <span className="mono" style={{ fontWeight: 800, fontSize: 15, color: outcomeColor(t.outcome, t.pnl) }}>{fmt$(t.pnl)}</span>
+                        <span style={{ color: C.textDim, fontSize: 14 }}>›</span>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, fontSize: 12 }}>
                         <div><div style={{ color: C.textDim, marginBottom: 2 }}>Date</div><div style={{ color: C.textMuted }}>{fmtDate(t.date)}</div></div>
