@@ -4426,11 +4426,14 @@ function StrategyCard({ s, trades, dispatch, onOpen }) {
   const sessionItems = groupBreakdown(st, "session");
   const riskItems = groupBreakdown(st, "risk");
   const color = s.color || C.accent;
+  // Whole card opens the detail modal — except taps on an inner interactive
+  // element (e.g. the "See more" toggle inside a BreakdownSection).
+  const handleCardClick = (e) => { if (e.target.closest("button")) return; onOpen(s); };
   return (
-    <Card style={{ borderTop: `3px solid ${color}`, padding: 22, position: "relative" }}>
+    <Card onClick={handleCardClick} style={{ borderTop: `3px solid ${color}`, padding: 22, position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
         <div style={{ width: 9, height: 9, borderRadius: "50%", background: color, marginRight: 9 }} />
-        <div onClick={() => onOpen(s)} style={{ fontWeight: 800, fontSize: 17, flex: 1, cursor: "pointer" }}>{s.name}</div>
+        <div style={{ fontWeight: 800, fontSize: 17, flex: 1 }}>{s.name}</div>
         <Badge color={C.textMuted}>{st.length} trades</Badge>
       </div>
       {s.description && <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 16, lineHeight: 1.5 }}>{s.description}</div>}
@@ -4468,10 +4471,6 @@ function StrategyCard({ s, trades, dispatch, onOpen }) {
       <BreakdownSection icon="🕐" title="Time Frame Entry" items={tfItems} />
       <BreakdownSection icon="🌐" title="Trading Session" items={sessionItems} />
       <BreakdownSection icon="⚠" title="Risk Meter" items={riskItems} colorFn={riskColor} />
-      <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
-        <Btn small variant="ghost" onClick={() => onOpen(s)} style={{ flex: 1, justifyContent: "center" }}>📖 View Full Details</Btn>
-        <button onClick={() => dispatch({ type: "DELETE_STRATEGY", id: s.id })} style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 7, color: C.textDim, fontSize: 11, padding: "0 12px", cursor: "pointer" }}>Remove</button>
-      </div>
     </Card>
   );
 }
@@ -4480,11 +4479,10 @@ function StrategyCard({ s, trades, dispatch, onOpen }) {
 function Strategies({ state, dispatch }) {
   const { strategies, trades } = state;
   const [adding, setAdding] = useState(false), [form, setForm] = useState({ name: "", description: "", color: ACCOUNT_COLORS[0], rules: [""] });
-  const [viewingId, setViewingId] = useState(null);
   const atCap = !canAddSetup(state);
   const save = () => { if (!form.name || atCap) return; dispatch({ type: "ADD_STRATEGY", strategy: { id: `s${Date.now()}`, ...form, rules: form.rules.filter(Boolean) } }); setForm({ name: "", description: "", color: ACCOUNT_COLORS[0], rules: [""] }); setAdding(false); };
   const openAdd = () => atCap ? dispatch({ type: "OPEN_MODAL", modal: "upgrade" }) : setAdding(a => !a);
-  const viewingStrategy = viewingId ? strategies.find(s => s.id === viewingId) : null;
+  const openDetail = (s) => dispatch({ type: "OPEN_MODAL", modal: { type: "playbook_detail", id: s.id } });
   return (
     <div className="fade-in" style={{ height: "100%", overflowY: "auto", padding: 28, display: "flex", flexDirection: "column", gap: 18 }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -4520,12 +4518,11 @@ function Strategies({ state, dispatch }) {
         </Card>
       )}
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(360px, 1fr))", gap: 18 }}>
-        {strategies.map(s => <StrategyCard key={s.id} s={s} trades={trades} dispatch={dispatch} onOpen={st => setViewingId(st.id)} />)}
+        {strategies.map(s => <StrategyCard key={s.id} s={s} trades={trades} dispatch={dispatch} onOpen={openDetail} />)}
         <Card onClick={openAdd} style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: 200, cursor: "pointer", borderStyle: "dashed" }}>
           <div style={{ fontSize: 28, color: C.textDim, marginBottom: 6 }}>{atCap ? "🔒" : "+"}</div><div style={{ color: C.textMuted, fontSize: 14, display: "flex", alignItems: "center", gap: 6 }}>New Setup {atCap && <PlusBadge small />}</div>
         </Card>
       </div>
-      {viewingStrategy && <PlaybookDetailModal s={viewingStrategy} trades={trades} state={state} dispatch={dispatch} onClose={() => setViewingId(null)} />}
     </div>
   );
 }
@@ -7914,6 +7911,10 @@ export default function App() {
           {modalType === "welcome" && <WelcomeModal state={state} dispatch={dispatch} />}
           {modalType === "add_trade" && <AddTradeModal state={state} dispatch={dispatch} />}
           {modalType === "upgrade" && <UpgradeModal state={state} dispatch={dispatch} />}
+          {modalType === "playbook_detail" && (() => {
+            const s = state.strategies.find(x => x.id === state.modal.id);
+            return s ? <PlaybookDetailModal s={s} trades={state.trades} state={state} dispatch={dispatch} onClose={() => dispatch({ type: "CLOSE_MODAL" })} /> : null;
+          })()}
         </div>
       </div>
       </PrivacyGuard>
