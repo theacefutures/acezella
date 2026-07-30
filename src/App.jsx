@@ -1650,20 +1650,6 @@ function AddTradeModal({ state, dispatch }) {
   const setOutcome = (val) => setForm(f => ({ ...f, outcome: val, pnl: applySign(val, f.pnl), pips: applySign(val, f.pips) }));
   const setSignedField = (field) => (v) => setForm(f => ({ ...f, [field]: applySign(f.outcome, v) }));
 
-  // Both auto-calc helpers below store GROSS P&L into form.pnl — fees are
-  // never baked into the stored value. Net P&L (gross − fees) is computed
-  // separately wherever it's displayed (e.g. the Trade Detail stat strip),
-  // so a trade's stored `pnl` consistently means "gross" everywhere.
-  const autoPnl = (() => {
-    const en = parseFloat(form.entry), ex = parseFloat(form.exit), sz = parseFloat(form.size) || 0;
-    if (isNaN(en) || isNaN(ex) || !sz) return null;
-    const dirMult = form.direction === "Short" ? -1 : 1;
-    const gross = (ex - en) * sz * dirMult;
-    return +gross.toFixed(2);
-  })();
-  const applyAutoPnl = () => { if (autoPnl != null) setSignedField("pnl")(String(autoPnl)); };
-  const autoNetPnl = autoPnl != null ? +(autoPnl - (parseFloat(form.fees) || 0)).toFixed(2) : null;
-
   // MGC / MGCQ6 (Micro Gold futures): tick size is 0.10, tick value is $1 per
   // contract — so 1 "pip" here = 1 tick = a 0.1 price move = $1/contract.
   // e.g. a 2.2 point move = 22 pips = $22 for 1 contract, $44 for 2.
@@ -1676,13 +1662,20 @@ function AddTradeModal({ state, dispatch }) {
     return Math.round((ex - en) * dirMult * 10);
   })();
   const autoPipsMGCGross = autoPipsMGC != null ? +(autoPipsMGC * (parseFloat(form.size) || 0)).toFixed(2) : null;
-  const autoPipsMGCNet = autoPipsMGCGross != null ? +(autoPipsMGCGross - (parseFloat(form.fees) || 0)).toFixed(2) : null;
   const applyAutoPipsMGC = () => {
     if (autoPipsMGC == null) return;
     setSignedField("pips")(String(autoPipsMGC));
     const sz = parseFloat(form.size) || 0;
     if (sz) setSignedField("pnl")(String(+(autoPipsMGC * sz).toFixed(2)));
   };
+
+  // 🧮 Auto — MGC only. Gross P&L is the exact same contracts × pips value
+  // as 🥇 Auto (MGC) above; this button just also subtracts the Fees /
+  // Commission field to get Net P&L, and stores that. Nothing else.
+  const autoGrossPnl = autoPipsMGCGross;
+  const autoPnl = autoGrossPnl != null ? +(autoGrossPnl - (parseFloat(form.fees) || 0)).toFixed(2) : null;
+  const applyAutoPnl = () => { if (autoPnl != null) setSignedField("pnl")(String(autoPnl)); };
+
 
   const addPartialExit = () => setForm(f => ({ ...f, partialExits: [...(f.partialExits || []), { id: `pe${Date.now()}`, price: "", size: "" }] }));
   const updatePartialExit = (id, k, v) => setForm(f => ({ ...f, partialExits: f.partialExits.map(p => p.id === id ? { ...p, [k]: v } : p) }));
@@ -1963,11 +1956,13 @@ function AddTradeModal({ state, dispatch }) {
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>P&amp;L</div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <input type="number" value={form.pnl} onChange={e => setSignedField("pnl")(e.target.value)} readOnly={form.outcome === "BE"} placeholder="Enter P&L or use auto-populate" style={{ ...modalInputStyle, flex: "1 1 160px", minWidth: 0, opacity: form.outcome === "BE" ? 0.55 : 1 }} />
-            <button onClick={applyAutoPnl} disabled={autoPnl == null || form.outcome === "BE"} style={{ background: (autoPnl == null || form.outcome === "BE") ? C.surfaceHigh : C.accentDim, border: `1px solid ${(autoPnl == null || form.outcome === "BE") ? C.border : C.accent + "55"}`, color: (autoPnl == null || form.outcome === "BE") ? C.textDim : C.accent, borderRadius: 10, padding: "0 18px", fontWeight: 700, fontSize: 13, cursor: (autoPnl == null || form.outcome === "BE") ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0, whiteSpace: "nowrap", minHeight: 44 }}>🧮 Auto</button>
+            {isMGC && (
+              <button onClick={applyAutoPnl} disabled={autoPnl == null || form.outcome === "BE"} style={{ background: (autoPnl == null || form.outcome === "BE") ? C.surfaceHigh : C.accentDim, border: `1px solid ${(autoPnl == null || form.outcome === "BE") ? C.border : C.accent + "55"}`, color: (autoPnl == null || form.outcome === "BE") ? C.textDim : C.accent, borderRadius: 10, padding: "0 18px", fontWeight: 700, fontSize: 13, cursor: (autoPnl == null || form.outcome === "BE") ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0, whiteSpace: "nowrap", minHeight: 44 }}>🧮 Auto</button>
+            )}
           </div>
-          {autoPnl != null && (
+          {isMGC && autoPnl != null && (
             <div style={{ fontSize: 12, color: C.accent, marginTop: 8 }}>
-              Gross P&L: {fmt$(autoPnl)}{(parseFloat(form.fees) || 0) > 0 && <span style={{ color: C.textDim }}> · Net after fee: <span style={{ color: autoNetPnl >= 0 ? C.accent : C.red, fontWeight: 700 }}>{fmt$(autoNetPnl)}</span></span>}
+              Gross P&L: {fmt$(autoGrossPnl)}{(parseFloat(form.fees) || 0) > 0 && <span style={{ color: C.textDim }}> − Fee {fmt$(parseFloat(form.fees) || 0)}</span>} = Net P&L (saved): <b>{fmt$(autoPnl)}</b>
             </div>
           )}
         </div>
@@ -1984,8 +1979,7 @@ function AddTradeModal({ state, dispatch }) {
           </ModalField>
           {isMGC && autoPipsMGC != null && (
             <div style={{ fontSize: 12, color: C.accent, marginTop: 8 }}>
-              MGC: 1 pip = 1 tick (0.10) = $1/contract → {autoPipsMGC} pip{Math.abs(autoPipsMGC) !== 1 ? "s" : ""} × {parseFloat(form.size) || 1} contract{parseFloat(form.size) !== 1 ? "s" : ""} = Gross {fmt$(autoPipsMGCGross)}
-              {(parseFloat(form.fees) || 0) > 0 && <span style={{ color: C.textDim }}> · Net after fee: <span style={{ color: autoPipsMGCNet >= 0 ? C.accent : C.red, fontWeight: 700 }}>{fmt$(autoPipsMGCNet)}</span></span>}
+              MGC: 1 pip = 1 tick (0.10) = $1/contract → {autoPipsMGC} pip{Math.abs(autoPipsMGC) !== 1 ? "s" : ""} × {parseFloat(form.size) || 1} contract{parseFloat(form.size) !== 1 ? "s" : ""} = Gross P&L (saved): {fmt$(autoPipsMGCGross)}
             </div>
           )}
         </div>
