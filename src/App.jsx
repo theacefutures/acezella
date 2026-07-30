@@ -4443,10 +4443,13 @@ function StrategyCard({ s, trades, dispatch, onOpen }) {
   const sessionItems = groupBreakdown(st, "session");
   const riskItems = groupBreakdown(st, "risk");
   const color = s.color || C.accent;
+  const [showShot, setShowShot] = useState(false);
   // Whole card opens the detail modal — except taps on an inner interactive
-  // element (e.g. the "See more" toggle inside a BreakdownSection).
-  const handleCardClick = (e) => { if (e.target.closest("button")) return; onOpen(s); };
+  // element (e.g. the "See more" toggle inside a BreakdownSection) or the
+  // screenshot thumbnail, which opens the lightbox instead.
+  const handleCardClick = (e) => { if (e.target.closest("button") || e.target.closest("[data-no-card-open]")) return; onOpen(s); };
   return (
+    <>
     <Card onClick={handleCardClick} style={{ borderTop: `3px solid ${color}`, padding: 22, position: "relative" }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
         <div style={{ width: 9, height: 9, borderRadius: "50%", background: color, marginRight: 9 }} />
@@ -4456,10 +4459,16 @@ function StrategyCard({ s, trades, dispatch, onOpen }) {
       {s.description && <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 16, lineHeight: 1.5 }}>{s.description}</div>}
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 18 }}>
         <ProgressRing pct={winPct} color={winPct >= 50 ? C.accent : C.red} label={`${winPct}%`} />
-        <div style={{ flex: 1 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 12, color: C.textMuted }}>Win rate <span style={{ color: C.text, fontWeight: 700 }}>{winPct.toFixed(1)}%</span></div>
           <div style={{ fontSize: 12, color: C.textMuted, marginTop: 3 }}>Net P&L <span style={{ color: stats.netPnl >= 0 ? C.accent : C.red, fontWeight: 700 }}>{fmt$(stats.netPnl)}</span></div>
         </div>
+        {s.screenshot && (
+          <div data-no-card-open onClick={e => { e.stopPropagation(); setShowShot(true); }}
+            style={{ width: 96, height: 62, borderRadius: 10, overflow: "hidden", border: `1px solid ${C.border}`, flexShrink: 0, background: C.bg, cursor: "zoom-in" }}>
+            <img src={s.screenshot} alt="" style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+          </div>
+        )}
       </div>
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1.1fr", gap: 10, marginBottom: 18, alignItems: "start" }}>
         <div>
@@ -4489,6 +4498,8 @@ function StrategyCard({ s, trades, dispatch, onOpen }) {
       <BreakdownSection icon="🌐" title="Trading Session" items={sessionItems} />
       <BreakdownSection icon="⚠" title="Risk Meter" items={riskItems} colorFn={riskColor} />
     </Card>
+    {showShot && s.screenshot && <ImageLightbox images={[s.screenshot]} index={0} onClose={() => setShowShot(false)} onNavigate={() => {}} title={`${s.name} — Setup Screenshot`} />}
+    </>
   );
 }
 
