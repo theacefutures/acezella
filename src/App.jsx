@@ -1650,14 +1650,19 @@ function AddTradeModal({ state, dispatch }) {
   const setOutcome = (val) => setForm(f => ({ ...f, outcome: val, pnl: applySign(val, f.pnl), pips: applySign(val, f.pips) }));
   const setSignedField = (field) => (v) => setForm(f => ({ ...f, [field]: applySign(f.outcome, v) }));
 
+  // Both auto-calc helpers below store GROSS P&L into form.pnl — fees are
+  // never baked into the stored value. Net P&L (gross − fees) is computed
+  // separately wherever it's displayed (e.g. the Trade Detail stat strip),
+  // so a trade's stored `pnl` consistently means "gross" everywhere.
   const autoPnl = (() => {
     const en = parseFloat(form.entry), ex = parseFloat(form.exit), sz = parseFloat(form.size) || 0;
     if (isNaN(en) || isNaN(ex) || !sz) return null;
     const dirMult = form.direction === "Short" ? -1 : 1;
     const gross = (ex - en) * sz * dirMult;
-    return +(gross - (parseFloat(form.fees) || 0)).toFixed(2);
+    return +gross.toFixed(2);
   })();
   const applyAutoPnl = () => { if (autoPnl != null) setSignedField("pnl")(String(autoPnl)); };
+  const autoNetPnl = autoPnl != null ? +(autoPnl - (parseFloat(form.fees) || 0)).toFixed(2) : null;
 
   // MGC / MGCQ6 (Micro Gold futures): tick size is 0.10, tick value is $1 per
   // contract — so 1 "pip" here = 1 tick = a 0.1 price move = $1/contract.
@@ -1670,6 +1675,8 @@ function AddTradeModal({ state, dispatch }) {
     const dirMult = form.direction === "Short" ? -1 : 1;
     return Math.round((ex - en) * dirMult * 10);
   })();
+  const autoPipsMGCGross = autoPipsMGC != null ? +(autoPipsMGC * (parseFloat(form.size) || 0)).toFixed(2) : null;
+  const autoPipsMGCNet = autoPipsMGCGross != null ? +(autoPipsMGCGross - (parseFloat(form.fees) || 0)).toFixed(2) : null;
   const applyAutoPipsMGC = () => {
     if (autoPipsMGC == null) return;
     setSignedField("pips")(String(autoPipsMGC));
@@ -1958,7 +1965,11 @@ function AddTradeModal({ state, dispatch }) {
             <input type="number" value={form.pnl} onChange={e => setSignedField("pnl")(e.target.value)} readOnly={form.outcome === "BE"} placeholder="Enter P&L or use auto-populate" style={{ ...modalInputStyle, flex: "1 1 160px", minWidth: 0, opacity: form.outcome === "BE" ? 0.55 : 1 }} />
             <button onClick={applyAutoPnl} disabled={autoPnl == null || form.outcome === "BE"} style={{ background: (autoPnl == null || form.outcome === "BE") ? C.surfaceHigh : C.accentDim, border: `1px solid ${(autoPnl == null || form.outcome === "BE") ? C.border : C.accent + "55"}`, color: (autoPnl == null || form.outcome === "BE") ? C.textDim : C.accent, borderRadius: 10, padding: "0 18px", fontWeight: 700, fontSize: 13, cursor: (autoPnl == null || form.outcome === "BE") ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0, whiteSpace: "nowrap", minHeight: 44 }}>🧮 Auto</button>
           </div>
-          {autoPnl != null && <div style={{ fontSize: 12, color: C.accent, marginTop: 8 }}>Calculated: {fmt$(autoPnl)}</div>}
+          {autoPnl != null && (
+            <div style={{ fontSize: 12, color: C.accent, marginTop: 8 }}>
+              Gross P&L: {fmt$(autoPnl)}{(parseFloat(form.fees) || 0) > 0 && <span style={{ color: C.textDim }}> · Net after fee: <span style={{ color: autoNetPnl >= 0 ? C.accent : C.red, fontWeight: 700 }}>{fmt$(autoNetPnl)}</span></span>}
+            </div>
+          )}
         </div>
 
         {/* Pips */}
@@ -1973,7 +1984,8 @@ function AddTradeModal({ state, dispatch }) {
           </ModalField>
           {isMGC && autoPipsMGC != null && (
             <div style={{ fontSize: 12, color: C.accent, marginTop: 8 }}>
-              MGC: 1 pip = 1 tick (0.10) = $1/contract → {autoPipsMGC} pip{Math.abs(autoPipsMGC) !== 1 ? "s" : ""} × {parseFloat(form.size) || 1} contract{parseFloat(form.size) !== 1 ? "s" : ""} = {fmt$(+(autoPipsMGC * (parseFloat(form.size) || 0)).toFixed(2))}
+              MGC: 1 pip = 1 tick (0.10) = $1/contract → {autoPipsMGC} pip{Math.abs(autoPipsMGC) !== 1 ? "s" : ""} × {parseFloat(form.size) || 1} contract{parseFloat(form.size) !== 1 ? "s" : ""} = Gross {fmt$(autoPipsMGCGross)}
+              {(parseFloat(form.fees) || 0) > 0 && <span style={{ color: C.textDim }}> · Net after fee: <span style={{ color: autoPipsMGCNet >= 0 ? C.accent : C.red, fontWeight: 700 }}>{fmt$(autoPipsMGCNet)}</span></span>}
             </div>
           )}
         </div>
@@ -3803,6 +3815,8 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
   const qualityLabel = quality >= 90 ? "Excellent" : quality >= 75 ? "Good" : quality >= 55 ? "Fair" : "Needs Work";
 
   const fees = parseFloat(trade.fees) || 0;
+  const grossPnl = trade.pnl;
+  const netPnl = grossPnl - fees;
 
   return (
     <div className="fade-in" style={{ height: "100%", overflowY: "auto", padding: 24 }}>
@@ -3846,7 +3860,7 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>{fmtDate(trade.date)} · {trade.symbol}</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 14 }}>
           {[
-            ["NET P&L", fmt$(trade.pnl), col],
+            ["NET P&L", fmt$(netPnl), netPnl >= 0 ? C.accent : C.red],
             ["SIDE", trade.direction.toUpperCase(), trade.direction === "Long" ? C.accent : C.red],
             ["LOTS", trade.size, C.text],
             ["PIPS", trade.pips ? `${trade.pips > 0 ? "+" : ""}${trade.pips}` : "—", trade.pips > 0 ? C.accent : trade.pips < 0 ? C.red : C.text],
@@ -3861,7 +3875,11 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 12, fontSize: 11, color: C.textDim }}>TOTAL CHARGES <span style={{ color: C.red, fontWeight: 700, fontFamily: "'Inter',sans-serif" }}>${fees.toFixed(2)}</span> {mins != null && <span> · HOLD TIME <span style={{ color: C.text, fontWeight: 700 }}>{fmtMin(mins)}</span></span>}</div>
+        <div style={{ marginTop: 12, fontSize: 11, color: C.textDim }}>
+          GROSS P&L <span style={{ color: grossPnl >= 0 ? C.accent : C.red, fontWeight: 700, fontFamily: "'Inter',sans-serif" }}>{fmt$(grossPnl)}</span>
+          {" · "}TOTAL CHARGES <span style={{ color: C.red, fontWeight: 700, fontFamily: "'Inter',sans-serif" }}>${fees.toFixed(2)}</span>
+          {mins != null && <span> · HOLD TIME <span style={{ color: C.text, fontWeight: 700 }}>{fmtMin(mins)}</span></span>}
+        </div>
       </Card>
 
       <div style={{ display: "grid", gridTemplateColumns: "1.6fr 1fr", gap: 16, alignItems: "start" }}>
