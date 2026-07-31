@@ -1,6 +1,6 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "./supabaseClient";
-import { loadCloudState, saveCloudState, flushCloudStateSync, getLocalCache, onSyncStatusChange } from "./lib/cloudSync";
+import { loadCloudState, saveCloudState, flushCloudStateSync, getLocalCache, getSnapshots, hasRealData, onSyncStatusChange } from "./lib/cloudSync";
 
 // ─── THEME ───────────────────────────────────────────────────────────────────
 // C is intentionally a single mutable object — every component reads C.xxx at
@@ -1200,6 +1200,7 @@ function SyncBadge({ status }) {
     pending: { text: "⋯ Saving…",              color: C.blue },
     saving:  { text: "⋯ Saving…",              color: C.blue },
     error:   { text: "⚠ Offline — will retry", color: C.red },
+    blocked: { text: "⛔ Save blocked (safe)",  color: C.red },
   };
   const s = map[status] || map.saved;
   return <span title="Cloud sync status" style={{ fontSize: 11, fontWeight: 700, color: s.color, whiteSpace: "nowrap", flexShrink: 0 }}>{s.text}</span>;
@@ -7199,6 +7200,37 @@ function LiveCapital({ state, dispatch, setPage }) {
   );
 }
 
+// ─── LOCAL BACKUPS (recovery, independent of Supabase) ───────────────────────
+function LocalBackupsList({ state, dispatch, notify }) {
+  const [confirmIdx, setConfirmIdx] = useState(null);
+  const snapshots = state.currentUser?.id ? getSnapshots(state.currentUser.id) : [];
+  if (!snapshots.length) return <div style={{ fontSize: 12, color: C.textDim }}>No local backups yet — they're created automatically as you use the app.</div>;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+      {snapshots.map((snap, i) => {
+        const t = snap.state.trades?.length || 0;
+        const confirming = confirmIdx === i;
+        return (
+          <div key={snap.savedAt} style={{ display: "flex", alignItems: "center", gap: 10, background: C.surfaceHigh, borderRadius: 9, padding: "10px 14px", flexWrap: "wrap" }}>
+            <div style={{ flex: 1, fontSize: 13, minWidth: 180 }}>
+              <div style={{ fontWeight: 600 }}>{new Date(snap.savedAt).toLocaleString()}</div>
+              <div style={{ fontSize: 11, color: C.textDim }}>{t} trade{t !== 1 ? "s" : ""} · {snap.state.accounts?.length || 0} account{(snap.state.accounts?.length || 0) !== 1 ? "s" : ""}</div>
+            </div>
+            {confirming ? (
+              <>
+                <Btn small variant="danger" onClick={() => { dispatch({ type: "IMPORT_DATA", data: { ...snap.state, currentUser: state.currentUser } }); notify("✓ Backup restored."); setConfirmIdx(null); }}>Confirm Restore</Btn>
+                <Btn small variant="ghost" onClick={() => setConfirmIdx(null)}>Cancel</Btn>
+              </>
+            ) : (
+              <Btn small variant="ghost" onClick={() => setConfirmIdx(i)}>Restore</Btn>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 // ─── SETTINGS ─────────────────────────────────────────────────────────────────
 function Settings({ state, dispatch }) {
   const { accounts = [], sessions = [], emotions = [] } = state;
@@ -7673,6 +7705,15 @@ function Settings({ state, dispatch }) {
         )}
       </Card>
 
+      {/* Local Backups (recovery) */}
+      <Card>
+        <SectionLabel>Local Backups</SectionLabel>
+        <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 14 }}>
+          The app automatically keeps the last 10 real saves on this device, independent of the cloud. Use this if your cloud data ever looks wrong.
+        </div>
+        <LocalBackupsList state={state} dispatch={dispatch} notify={notify} />
+      </Card>
+
       {/* Danger Zone */}
       <Card style={{ borderColor: C.red + "44" }}>
         <SectionLabel>Danger Zone</SectionLabel>
@@ -7820,8 +7861,17 @@ export default function App() {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [authChecked, setAuthChecked] = useState(false);
   const [cloudLoaded, setCloudLoaded] = useState(false);
-  const [syncStatus, setSyncStatus] = useState("saved"); // "saved" | "pending" | "saving" | "error"
-  const dispatch = useCallback(action => setRawState(prev => reducer(prev, action)), []);
+  const [syncStatus, setSyncStatus] = useState("saved"); // "saved" | "pending" | "saving" | "error" | "blocked"
+  const [loadError, setLoadError] = useState(null);
+  const [retryTick, setRetryTick] = useState(0);
+  // Set to true only by an explicit, user-confirmed "Clear All Data" action.
+  // The save effect below reads and immediately resets this — it's the only
+  // way an empty state is ever allowed to be pushed to Supabase.
+  const allowEmptySaveRef = useRef(false);
+  const dispatch = useCallback(action => {
+    if (action.type === "CLEAR_ALL_DATA") allowEmptySaveRef.current = true;
+    setRawState(prev => reducer(prev, action));
+  }, []);
 
   // ── Restore Supabase session on load, and react to sign-in/out elsewhere ──
   useEffect(() => {
@@ -7846,29 +7896,53 @@ export default function App() {
     if (!state.currentUser?.id) return;
     let cancelled = false;
     setCloudLoaded(false);
-    loadCloudState(state.currentUser.id).then(cloud => {
+    setLoadError(null);
+    loadCloudState(state.currentUser.id).then(result => {
       if (cancelled) return;
-      if (cloud) {
-        dispatch({ type: "IMPORT_DATA", data: { ...cloud, currentUser: state.currentUser } });
+
+      if (result.status === "error") {
+        // We genuinely don't know what's in the cloud right now — a network
+        // or server error is NOT the same as "no data exists". Stop here
+        // and show a retry screen instead of guessing. This replaces the
+        // old behavior of treating any failed fetch as "must be new" and
+        // wiping everything.
+        setLoadError(result.error);
+        return;
+      }
+
+      if (result.status === "ok") {
+        dispatch({ type: "IMPORT_DATA", data: { ...result.data, currentUser: state.currentUser } });
       } else {
+        // status === "not_found" — Supabase confirms no row exists for this
+        // user. Still check local cache and snapshot history before ever
+        // assuming "brand new" — a prior save could have failed silently,
+        // or the row could have been removed unexpectedly.
         const cached = getLocalCache(state.currentUser.id);
-        if (cached?.unsynced) {
-          // Cloud has nothing yet because a previous save failed — recover
-          // the unsynced local copy and let it re-push automatically.
-          dispatch({ type: "IMPORT_DATA", data: { ...cached.state, currentUser: state.currentUser } });
+        const snapshots = getSnapshots(state.currentUser.id);
+        const recoverable =
+          (cached?.state && hasRealData(cached.state)) ? cached.state :
+          (snapshots[0]?.state && hasRealData(snapshots[0].state)) ? snapshots[0].state :
+          null;
+        if (recoverable) {
+          dispatch({ type: "IMPORT_DATA", data: { ...recoverable, currentUser: state.currentUser } });
         } else {
-          // Brand-new account — start clean.
+          // Nothing in the cloud AND nothing recoverable locally — this really
+          // does look like a brand-new account.
           dispatch({ type: "IMPORT_DATA", data: { ...blankState(), currentUser: state.currentUser } });
         }
       }
       setCloudLoaded(true);
     });
     return () => { cancelled = true; };
-  }, [state.currentUser?.id]);
+  }, [state.currentUser?.id, retryTick]);
 
   // ── Push every change back up to Supabase (debounced + coalesced), once initial pull is done ──
   useEffect(() => {
-    if (state.currentUser?.id && cloudLoaded) saveCloudState(state.currentUser.id, state);
+    if (state.currentUser?.id && cloudLoaded) {
+      const allowEmpty = allowEmptySaveRef.current;
+      allowEmptySaveRef.current = false;
+      saveCloudState(state.currentUser.id, state, { allowEmpty });
+    }
   }, [state, cloudLoaded]);
 
   // ── Reliable flush right before the tab actually goes away ──────────────
@@ -7921,6 +7995,22 @@ export default function App() {
     <>
       <style>{buildGlobalCSS()}</style>
       <div style={{ minHeight: "100vh", background: C.bg }}><SpadeLoader label="Loading…" /></div>
+    </>
+  );
+
+  if (state.currentUser && loadError) return (
+    <>
+      <style>{buildGlobalCSS()}</style>
+      <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+        <div style={{ width: "100%", maxWidth: 460, background: C.surface, border: `1px solid ${C.border}`, borderRadius: 16, padding: 30, textAlign: "center" }}>
+          <div style={{ fontSize: 30, marginBottom: 14 }}>⚠️</div>
+          <div style={{ fontWeight: 800, fontSize: 17, marginBottom: 10 }}>Couldn't reach your saved data</div>
+          <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 22, lineHeight: 1.6 }}>
+            We couldn't confirm your cloud data loaded correctly, so — to protect your trades — nothing was changed. Check your internet connection and try again.
+          </div>
+          <button onClick={() => setRetryTick(t => t + 1)} style={{ background: C.accent, color: "#000", border: "none", borderRadius: 10, padding: "11px 22px", fontWeight: 700, fontSize: 14, cursor: "pointer" }}>Retry</button>
+        </div>
+      </div>
     </>
   );
 
