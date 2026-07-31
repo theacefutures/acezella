@@ -164,6 +164,27 @@ const outcomeColor = (outcome, pnl) => {
 
 // ─── UTILS ───────────────────────────────────────────────────────────────────
 const fmt$ = (n) => { const a = Math.abs(n).toFixed(2); return n >= 0 ? `+$${a}` : `-$${a}`; };
+// ─── MONEY / PERCENT DISPLAY (global $↔% toggle) ─────────────────────────────
+// "%" mode shows a trade's P&L as a return on its notional (entry price ×
+// size) instead of a dollar figure — useful when you want to think in terms
+// of process/risk rather than account balance. Falls back to $ when a trade
+// doesn't have enough data (no entry price or size) to compute a % return.
+const pnlPctOfNotional = (t, value) => {
+  const notional = (parseFloat(t.entry) || 0) * (parseFloat(t.size) || 0);
+  if (!notional) return null;
+  return ((value ?? t.pnl) / notional) * 100;
+};
+const fmtPct = (pct) => `${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%`;
+// Formats a trade's P&L according to the active global display mode.
+// `value` lets callers pass a derived number (e.g. fee-adjusted Net P&L)
+// instead of the trade's raw stored pnl.
+const fmtPnlMode = (t, mode, value) => {
+  if (mode === "percent") {
+    const pct = pnlPctOfNotional(t, value);
+    return pct == null ? fmt$(value ?? t.pnl) : fmtPct(pct);
+  }
+  return fmt$(value ?? t.pnl);
+};
 const fmtDate = (iso) => new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 const fmtTime = (iso) => new Date(iso).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" });
 const ACCOUNT_COLORS = [C.accent, C.yellow, C.blue, "#ff8844", "#cc44ff", "#44ccff", "#ff44cc"];
@@ -562,6 +583,7 @@ function defaultState() {
       { id: "fp6", firmId: "pf1", gross: 1800, splitPct: 80, date: "2026-01-28", certificateUrl: "", notes: "January payout - best month yet" },
     ],
     siteName: "ACEZELLA",
+    pnlDisplayMode: "money", // "money" | "percent" — global $ / % toggle for trade-level P&L displays
     plan: "free", // "free" (Ace Basic) | "plus" (AcePlus $10/mo)
     theme: { name: "Original", mode: "night" },
     themeSchemaVersion: THEME_SCHEMA_VERSION,
@@ -733,6 +755,7 @@ function reducer(state, action) {
     case "SET_TRANSPARENCY": next = { ...state, uiTransparency: action.value }; break;
     case "SET_POPUP_TRANSPARENCY": next = { ...state, popupTransparency: action.value }; break;
     case "SET_SITE_NAME": next = { ...state, siteName: action.name }; break;
+    case "SET_PNL_DISPLAY_MODE": next = { ...state, pnlDisplayMode: action.mode }; break;
     case "SET_PLAN": next = { ...state, plan: action.plan, modal: null }; break;
     case "SET_WATERMARK": next = { ...state, watermark: { ...state.watermark, ...action.watermark } }; break;
     case "SET_PRIVACY": next = { ...state, privacy: { ...state.privacy, ...action.data } }; break;
@@ -1182,6 +1205,27 @@ function SyncBadge({ status }) {
   return <span title="Cloud sync status" style={{ fontSize: 11, fontWeight: 700, color: s.color, whiteSpace: "nowrap", flexShrink: 0 }}>{s.text}</span>;
 }
 
+// ─── $ / % DISPLAY TOGGLE ─────────────────────────────────────────────────────
+// Global switch between showing trade P&L as dollars or as a percent return
+// on notional — flips the whole app's per-trade money displays over so the
+// focus is on process/risk consistency rather than the raw dollar figure.
+function PnlModeToggle({ state, dispatch }) {
+  const mode = state.pnlDisplayMode || "money";
+  const setMode = (m) => dispatch({ type: "SET_PNL_DISPLAY_MODE", mode: m });
+  const btnStyle = (active) => ({
+    width: 30, height: 26, borderRadius: 7, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 800,
+    background: active ? C.accentDim : "transparent", color: active ? C.accent : C.textDim,
+    boxShadow: active ? `0 0 0 1px ${C.accent}55` : "none", transition: "all 0.12s",
+  });
+  return (
+    <div title="Show trade P&L in $ or %" style={{ position: "relative", display: "flex", gap: 3, background: C.surfaceHigh, border: `1px solid ${C.border}`, borderRadius: 10, padding: 3, flexShrink: 0 }}>
+      <span style={{ position: "absolute", top: -8, right: -6, background: C.accent, color: "#001018", fontSize: 8, fontWeight: 800, padding: "1px 5px", borderRadius: 20, letterSpacing: 0.3, whiteSpace: "nowrap" }}>NEW!</span>
+      <button onClick={() => setMode("money")} style={btnStyle(mode === "money")}>$</button>
+      <button onClick={() => setMode("percent")} style={btnStyle(mode === "percent")}>%</button>
+    </div>
+  );
+}
+
 function TopHeader({ state, dispatch, setPage, page, syncStatus }) {
   const { currentUser, accounts, activeAccount } = state;
   const [userOpen, setUserOpen] = useState(false);
@@ -1272,6 +1316,8 @@ function TopHeader({ state, dispatch, setPage, page, syncStatus }) {
           </>
         )}
       </div>
+
+      <PnlModeToggle state={state} dispatch={dispatch} />
 
       <SyncBadge status={syncStatus} />
 
@@ -2799,7 +2845,7 @@ function Dashboard({ state, dispatch, setPage }) {
               <>
                 {t.pips !== undefined && t.pips !== 0 && <span style={{ fontSize: 12, color: t.pips > 0 ? C.accent : C.red }}>{t.pips > 0 ? "+" : ""}{t.pips} pips</span>}
                 <Badge color={outcomeColor(t.outcome, t.pnl)}>{t.outcome}</Badge>
-                <div className="mono" style={{ fontWeight: 700, fontSize: 16, color: outcomeColor(t.outcome, t.pnl), minWidth: 90, textAlign: "right" }}>{fmt$(t.pnl)}</div>
+                <div className="mono" style={{ fontWeight: 700, fontSize: 16, color: outcomeColor(t.outcome, t.pnl), minWidth: 90, textAlign: "right" }}>{fmtPnlMode(t, state.pnlDisplayMode)}</div>
               </>
             )}
           </div>
@@ -2910,7 +2956,7 @@ function Journal({ state, dispatch, setPage }) {
                       {td(t.risk ? <Badge color={riskColor(t.risk)}>{t.risk}</Badge> : "—")}
                       {td(t.mood ? <Badge color={moodColor(t.mood)}>{t.mood}</Badge> : "—")}
                       {td(t.exitBehavior ? <Badge color={exitBehaviorColor(t.exitBehavior)}>{exitLabel}</Badge> : "—")}
-                      {td(<span className="mono" style={{ fontWeight: 700, color: outcomeColor(t.outcome, t.pnl) }}>{fmt$(t.pnl)}</span>)}
+                      {td(<span className="mono" style={{ fontWeight: 700, color: outcomeColor(t.outcome, t.pnl) }}>{fmtPnlMode(t, state.pnlDisplayMode)}</span>)}
                       {td(t.pips !== undefined && t.pips !== 0 ? <span className="mono" style={{ fontWeight: 700, color: t.pips > 0 ? C.accent : C.red }}>{t.pips > 0 ? "+" : ""}{t.pips}</span> : <span style={{ color: C.textDim }}>—</span>)}
                       {td(t.screenshots?.length > 0 ? <span style={{ color: C.blue }}>📷 {t.screenshots.length}</span> : <span style={{ color: C.textDim }}>—</span>)}
                       {td(t.notes ? <Badge color="#9b6bff">📄 Open</Badge> : <span style={{ color: C.textDim }}>—</span>)}
@@ -3854,7 +3900,7 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
         <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 14 }}>{fmtDate(trade.date)} · {trade.symbol}</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(8, 1fr)", gap: 14 }}>
           {[
-            ["NET P&L", fmt$(netPnl), netPnl >= 0 ? C.accent : C.red],
+            ["NET P&L", fmtPnlMode(trade, state.pnlDisplayMode, netPnl), netPnl >= 0 ? C.accent : C.red],
             ["SIDE", trade.direction.toUpperCase(), trade.direction === "Long" ? C.accent : C.red],
             ["LOTS", trade.size, C.text],
             ["PIPS", trade.pips ? `${trade.pips > 0 ? "+" : ""}${trade.pips}` : "—", trade.pips > 0 ? C.accent : trade.pips < 0 ? C.red : C.text],
@@ -3870,7 +3916,7 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
           ))}
         </div>
         <div style={{ marginTop: 12, fontSize: 11, color: C.textDim }}>
-          GROSS P&L <span style={{ color: grossPnl >= 0 ? C.accent : C.red, fontWeight: 700, fontFamily: "'Inter',sans-serif" }}>{fmt$(grossPnl)}</span>
+          GROSS P&L <span style={{ color: grossPnl >= 0 ? C.accent : C.red, fontWeight: 700, fontFamily: "'Inter',sans-serif" }}>{fmtPnlMode(trade, state.pnlDisplayMode, grossPnl)}</span>
           {" · "}TOTAL CHARGES <span style={{ color: C.red, fontWeight: 700, fontFamily: "'Inter',sans-serif" }}>${fees.toFixed(2)}</span>
           {mins != null && <span> · HOLD TIME <span style={{ color: C.text, fontWeight: 700 }}>{fmtMin(mins)}</span></span>}
         </div>
@@ -7940,6 +7986,7 @@ export default function App() {
               <button onClick={() => setMobileNavOpen(true)} aria-label="Open menu" style={{ background: "none", border: "none", color: C.text, fontSize: 22, cursor: "pointer", padding: "4px 6px" }}>☰</button>
               <div style={{ fontWeight: 700, fontSize: 15, display: "flex", alignItems: "center", gap: 6, minWidth: 0, overflow: "hidden" }}><span>{currentNav?.icon}</span><span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{currentNav?.label}</span></div>
               <div style={{ display: "flex", alignItems: "center", gap: 10, flexShrink: 0 }}>
+                <PnlModeToggle state={state} dispatch={dispatch} />
                 <SyncBadge status={syncStatus} />
                 <button onClick={() => openAddTrade(state, dispatch)} style={{ background: C.accent, border: "none", color: "#000", fontWeight: 700, fontSize: 13, borderRadius: 8, padding: "6px 12px", cursor: "pointer" }}>+ Trade</button>
               </div>
