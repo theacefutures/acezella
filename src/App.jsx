@@ -2160,7 +2160,7 @@ function drawShareCard(ctx, layout, trade, chartImg, frame) {
   ctx.fillStyle = "#04140d"; ctx.font = "800 22px Inter, sans-serif";
   ctx.fillText("A", pad + 22, headerY + 24);
   ctx.textAlign = "left"; ctx.fillStyle = "#f2f4f9"; ctx.font = "800 24px Inter, sans-serif";
-  ctx.fillText("ACEZELLA", pad + 58, headerY + 24);
+  ctx.fillText("THE ACE LOUNGE", pad + 58, headerY + 24);
   ctx.textAlign = "right"; ctx.fillStyle = "#8a93a8"; ctx.font = "500 20px Inter, sans-serif";
   ctx.fillText(fmtDate(trade.date), W - pad, headerY + 24);
 
@@ -2202,9 +2202,9 @@ function drawShareCard(ctx, layout, trade, chartImg, frame) {
   ctx.strokeStyle = "#ffffff14"; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.moveTo(pad, footerY - 6); ctx.lineTo(W - pad, footerY - 6); ctx.stroke();
   ctx.textAlign = "center"; ctx.fillStyle = "#8a93a8"; ctx.font = "600 17px Inter, sans-serif";
-  ctx.fillText("Journal your own trades · ACEZELLA", W / 2, footerY + 20);
+  ctx.fillText("Journal your own trades · THE ACE LOUNGE", W / 2, footerY + 20);
   ctx.fillStyle = "#4b5266"; ctx.font = "500 13px Inter, sans-serif";
-  ctx.fillText("Not financial advice", W / 2, footerY + 42);
+  ctx.fillText("One Trade Never Makes A Trader", W / 2, footerY + 42);
 }
 
 async function renderShareCardPNG(trade, screenshotUrl, frame) {
