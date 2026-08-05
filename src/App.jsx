@@ -2080,14 +2080,16 @@ function ShareModal({ trade, dispatch }) {
 
 
 // ─── SOCIAL SHARE CARD (PNG export) ──────────────────────────────────────────
-// Renders a trade as a shareable social-media card (brand header, big P&L,
-// the trade's chart screenshot cropped/zoomed by the user, and quick-glance
-// badges). The same draw routine backs both the live "frame your chart"
-// preview and the full-resolution PNG export, so the preview is truly
-// WYSIWYG — no surprises between what's shown and what gets downloaded.
+// Renders a trade as a "Trade Ticket" — a full-bleed chart hero with a
+// rotated wax-seal P&L stamp straddling the tear line, then a perforated
+// ticket stub (fields + a decorative barcode) below. The same draw routine
+// backs both the live "frame your chart" preview and the full-resolution
+// PNG export, so the preview is truly WYSIWYG — no surprises between what's
+// shown and what gets downloaded.
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const SHARE_CARD_W = 1080;
-const SHARE_CHART_H = { wide: 460, tall: 680 };
+const SHARE_HERO_H = { wide: 620, tall: 900 };
+const SHARE_BRAND = "THE ACE LOUNGE";
 
 function loadImageFromURL(url) {
   return new Promise((resolve, reject) => {
@@ -2110,19 +2112,34 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// All fixed pixel positions for the card, given the chosen chart aspect —
+// Deterministic tiny PRNG (mulberry32), seeded from the trade id, so the
+// decorative "barcode" is stable for a given trade instead of re-randomizing
+// on every re-render.
+function seededRng(seedStr) {
+  let h = 1779033703 ^ (seedStr || "").length;
+  for (let i = 0; i < (seedStr || "").length; i++) { h = Math.imul(h ^ seedStr.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
+  return function () {
+    h = Math.imul(h ^ (h >>> 16), 2246822507);
+    h = Math.imul(h ^ (h >>> 13), 3266489909);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296;
+  };
+}
+
+// All fixed pixel positions for the ticket, given the chosen hero aspect —
 // drives both the export canvas's height and the live preview, so they
 // always agree.
 function shareCardLayout(aspect) {
   const W = SHARE_CARD_W, pad = 64;
-  const headerY = pad, headerH = 52;
-  const symbolY = headerY + headerH + 36, symbolH = 30;
-  const pnlY = symbolY + symbolH + 8, pnlH = 108;
-  const chartY = pnlY + pnlH + 36, chartH = SHARE_CHART_H[aspect] || SHARE_CHART_H.wide;
-  const badgesY = chartY + chartH + 32, badgesH = 88;
-  const footerY = badgesY + badgesH + 30, footerH = 56;
-  const H = footerY + footerH + pad;
-  return { W, H, pad, headerY, headerH, symbolY, pnlY, pnlH, chartY, chartH, badgesY, badgesH, footerY };
+  const heroH = SHARE_HERO_H[aspect] || SHARE_HERO_H.wide;
+  const stampW = 400, stampH = 132, stampY = heroH; // stamp is centered ON the seam
+  const symbolY = heroH + stampH / 2 + 46, symbolH = 40;
+  const perfY = symbolY + symbolH + 26;
+  const statsY = perfY + 34, statsH = 224;
+  const barcodeY = statsY + statsH + 30, barcodeH = 60;
+  const footerY = barcodeY + barcodeH + 34, footerH = 60;
+  const H = footerY + footerH + 46;
+  return { W, H, pad, heroH, stampW, stampH, stampY, symbolY, symbolH, perfY, statsY, statsH, barcodeY, barcodeH, footerY };
 }
 
 // Draws the pan/zoomed crop of `img` into rect (x,y,w,h). zoom 1 = plain
@@ -2141,73 +2158,124 @@ function drawShareChartCrop(ctx, img, x, y, w, h, zoom, offsetXFrac, offsetYFrac
 }
 
 // Core draw routine, shared by the live chart-crop preview (small canvas,
-// chart region only) and the full card export (whole layout) — see below.
+// hero region only) and the full ticket export (whole layout) — see below.
 function drawShareCard(ctx, layout, trade, chartImg, frame) {
-  const { W, H, pad, headerY, symbolY, pnlY, pnlH, chartY, chartH, badgesY, badgesH, footerY } = layout;
+  const { W, H, pad, heroH, stampW, stampH, stampY, symbolY, symbolH, perfY, statsY, statsH, barcodeY, barcodeH, footerY } = layout;
   const pnlColor = trade.outcome === "BE" ? "#f5a623" : trade.pnl >= 0 ? "#32D18D" : "#ff4466";
+  const isLong = /long|buy/i.test(trade.direction || "");
+  const dirColor = isLong ? "#32D18D" : "#4488ff";
+  const stubBg = "#0c1220";
 
-  const bg = ctx.createLinearGradient(0, 0, 0, H);
-  bg.addColorStop(0, "#0b1020"); bg.addColorStop(1, "#05070d");
-  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
-  const glow = ctx.createRadialGradient(W * 0.82, H * 0.04, 0, W * 0.82, H * 0.04, W * 0.75);
-  glow.addColorStop(0, pnlColor + "20"); glow.addColorStop(1, "transparent");
-  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+  // Base
+  ctx.fillStyle = stubBg; ctx.fillRect(0, 0, W, H);
 
-  // Header — logo + wordmark, date top-right
-  ctx.fillStyle = "#32D18D";
-  roundRectPath(ctx, pad, headerY, 44, 44, 12); ctx.fill();
-  ctx.textBaseline = "middle"; ctx.textAlign = "center";
-  ctx.fillStyle = "#04140d"; ctx.font = "800 22px Inter, sans-serif";
-  ctx.fillText("A", pad + 22, headerY + 24);
-  ctx.textAlign = "left"; ctx.fillStyle = "#f2f4f9"; ctx.font = "800 24px Inter, sans-serif";
-  ctx.fillText("THE ACE LOUNGE", pad + 58, headerY + 24);
-  ctx.textAlign = "right"; ctx.fillStyle = "#8a93a8"; ctx.font = "500 20px Inter, sans-serif";
-  ctx.fillText(fmtDate(trade.date), W - pad, headerY + 24);
-
-  // Symbol
-  ctx.textBaseline = "alphabetic"; ctx.textAlign = "center";
-  ctx.fillStyle = "#8a93a8"; ctx.font = "700 22px Inter, sans-serif";
-  ctx.fillText((trade.symbol || "").toUpperCase(), W / 2, symbolY + 22);
-
-  // P&L — huge
-  ctx.fillStyle = pnlColor; ctx.font = "800 88px Inter, sans-serif";
-  ctx.fillText(fmt$(trade.pnl), W / 2, pnlY + pnlH - 18);
-
-  // Chart
-  roundRectPath(ctx, pad, chartY, W - pad * 2, chartH, 20);
-  ctx.save(); ctx.clip();
-  if (chartImg) drawShareChartCrop(ctx, chartImg, pad, chartY, W - pad * 2, chartH, frame.zoom, frame.offsetX, frame.offsetY);
-  else { ctx.fillStyle = "#151b2c"; ctx.fillRect(pad, chartY, W - pad * 2, chartH); }
+  // ── Hero: full-bleed chart with a dark fade into the ticket stub ──────────
+  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, heroH); ctx.clip();
+  if (chartImg) drawShareChartCrop(ctx, chartImg, 0, 0, W, heroH, frame.zoom, frame.offsetX, frame.offsetY);
+  else { ctx.fillStyle = "#151b2c"; ctx.fillRect(0, 0, W, heroH); }
+  const fade = ctx.createLinearGradient(0, 0, 0, heroH);
+  fade.addColorStop(0, "#00000060"); fade.addColorStop(0.5, "#00000000"); fade.addColorStop(1, stubBg);
+  ctx.fillStyle = fade; ctx.fillRect(0, 0, W, heroH);
   ctx.restore();
-  ctx.strokeStyle = "#ffffff14"; ctx.lineWidth = 1;
-  roundRectPath(ctx, pad, chartY, W - pad * 2, chartH, 20); ctx.stroke();
 
-  // Badge row
-  const badgeDefs = [["DIRECTION", trade.direction], ["SESSION", trade.session], ["SETUP", trade.setup], ["OUTCOME", trade.outcome]];
-  const gap = 18, bw = (W - pad * 2 - gap * 3) / 4;
-  badgeDefs.forEach(([label, value], i) => {
-    const bx = pad + i * (bw + gap);
-    ctx.fillStyle = "#ffffff0d"; roundRectPath(ctx, bx, badgesY, bw, badgesH, 14); ctx.fill();
-    ctx.strokeStyle = "#ffffff1a"; ctx.lineWidth = 1; roundRectPath(ctx, bx, badgesY, bw, badgesH, 14); ctx.stroke();
-    ctx.textAlign = "center";
-    ctx.fillStyle = "#6b7488"; ctx.font = "700 13px Inter, sans-serif";
-    ctx.fillText(label, bx + bw / 2, badgesY + 30);
-    ctx.fillStyle = "#eef0f5"; ctx.font = "700 18px Inter, sans-serif";
+  // Direction chip — top-left, floating on the hero
+  ctx.font = "800 16px Inter, sans-serif";
+  const dirLabel = (trade.direction || "—").toUpperCase();
+  const dirTextW = ctx.measureText(dirLabel).width;
+  const dirChipW = dirTextW + 58, dirChipX = 32, dirChipY = 32, dirChipH = 42;
+  ctx.fillStyle = "#00000070"; roundRectPath(ctx, dirChipX, dirChipY, dirChipW, dirChipH, 21); ctx.fill();
+  ctx.strokeStyle = dirColor + "80"; ctx.lineWidth = 1.5; roundRectPath(ctx, dirChipX, dirChipY, dirChipW, dirChipH, 21); ctx.stroke();
+  ctx.fillStyle = dirColor; ctx.font = "700 18px Inter, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText(isLong ? "▲" : "▼", dirChipX + 16, dirChipY + dirChipH / 2 + 1);
+  ctx.fillStyle = "#f2f4f9"; ctx.font = "800 16px Inter, sans-serif";
+  ctx.fillText(dirLabel, dirChipX + 38, dirChipY + dirChipH / 2 + 1);
+
+  // Brand chip — top-right, floating on the hero
+  ctx.font = "800 18px Inter, sans-serif";
+  const brandTextW = ctx.measureText(SHARE_BRAND).width;
+  const brandChipW = brandTextW + 62, brandChipX = W - 32 - brandChipW, brandChipY = 32, brandChipH = 42;
+  ctx.fillStyle = "#00000070"; roundRectPath(ctx, brandChipX, brandChipY, brandChipW, brandChipH, 21); ctx.fill();
+  ctx.strokeStyle = "#ffffff22"; ctx.lineWidth = 1.5; roundRectPath(ctx, brandChipX, brandChipY, brandChipW, brandChipH, 21); ctx.stroke();
+  ctx.fillStyle = "#32D18D"; ctx.font = "18px Inter, sans-serif"; ctx.textAlign = "left";
+  ctx.fillText("♠", brandChipX + 18, brandChipY + brandChipH / 2 + 1);
+  ctx.fillStyle = "#f2f4f9"; ctx.font = "800 15px Inter, sans-serif";
+  ctx.fillText(SHARE_BRAND, brandChipX + 38, brandChipY + brandChipH / 2 + 1);
+
+  // ── Wax-seal P&L stamp — straddles the hero/stub seam, slightly rotated ──
+  ctx.save();
+  ctx.translate(W / 2, stampY); ctx.rotate((-4 * Math.PI) / 180);
+  ctx.fillStyle = "#0c1220e8"; roundRectPath(ctx, -stampW / 2, -stampH / 2, stampW, stampH, 18); ctx.fill();
+  ctx.strokeStyle = pnlColor; ctx.lineWidth = 3; roundRectPath(ctx, -stampW / 2, -stampH / 2, stampW, stampH, 18); ctx.stroke();
+  ctx.strokeStyle = pnlColor + "70"; ctx.lineWidth = 1.5; ctx.setLineDash([4, 5]);
+  roundRectPath(ctx, -stampW / 2 + 8, -stampH / 2 + 8, stampW - 16, stampH - 16, 12); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+  ctx.fillStyle = pnlColor + "b0"; ctx.font = "700 13px Inter, sans-serif";
+  ctx.fillText("R E S U L T", 0, -stampH / 2 + 34);
+  ctx.fillStyle = pnlColor; ctx.font = "800 52px Inter, sans-serif";
+  ctx.fillText(fmt$(trade.pnl), 0, stampH / 2 - 26);
+  ctx.restore();
+
+  // ── Ticket stub ─────────────────────────────────────────────────────────
+  // Symbol (left) + date (right), ticket-manifest style
+  ctx.textBaseline = "alphabetic"; ctx.textAlign = "left"; ctx.fillStyle = "#f2f4f9"; ctx.font = "800 30px Inter, sans-serif";
+  ctx.fillText((trade.symbol || "—").toUpperCase(), pad, symbolY + 26);
+  ctx.textAlign = "right"; ctx.fillStyle = "#8a93a8"; ctx.font = "600 17px Inter, sans-serif";
+  ctx.fillText(fmtDate(trade.date).toUpperCase(), W - pad, symbolY + 26);
+
+  // Perforation — true punched holes at the edges + a dashed tear line
+  ctx.save(); ctx.globalCompositeOperation = "destination-out";
+  ctx.beginPath(); ctx.arc(0, perfY, 18, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath(); ctx.arc(W, perfY, 18, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+  ctx.strokeStyle = "#ffffff30"; ctx.lineWidth = 2; ctx.setLineDash([9, 8]);
+  ctx.beginPath(); ctx.moveTo(pad * 0.4, perfY); ctx.lineTo(W - pad * 0.4, perfY); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // 2×2 field grid — SESSION / SETUP / (PIPS or SIZE) / OUTCOME
+  const pipsKnown = trade.pips !== undefined && trade.pips !== null && trade.pips !== "";
+  const thirdField = pipsKnown ? ["PIPS", `${trade.pips > 0 ? "+" : ""}${trade.pips}`] : ["SIZE", `${trade.size || "—"} lot${trade.size > 1 ? "s" : ""}`];
+  const fields = [["SESSION", trade.session], ["SETUP", trade.setup], thirdField, ["OUTCOME", trade.outcome]];
+  const gGap = 24, gW = (W - pad * 2 - gGap) / 2, gH = (statsH - gGap) / 2;
+  fields.forEach(([label, value], i) => {
+    const col = i % 2, row = Math.floor(i / 2);
+    const fx = pad + col * (gW + gGap), fy = statsY + row * (gH + gGap);
+    ctx.fillStyle = i % 3 === 2 ? pnlColor : dirColor; // subtle accent tick, alternating
+    ctx.fillRect(fx, fy + 4, 4, gH - 8);
+    ctx.textAlign = "left"; ctx.fillStyle = "#6b7488"; ctx.font = "700 13px Inter, sans-serif";
+    ctx.fillText(label, fx + 18, fy + 26);
+    ctx.fillStyle = "#eef0f5"; ctx.font = "700 24px Inter, sans-serif";
     let val = String(value || "—");
-    while (ctx.measureText(val).width > bw - 16 && val.length > 3) val = val.slice(0, -2) + "…";
-    ctx.fillText(val, bx + bw / 2, badgesY + 60);
+    while (ctx.measureText(val).width > gW - 24 && val.length > 3) val = val.slice(0, -2) + "…";
+    ctx.fillText(val, fx + 18, fy + 58);
   });
+
+  // Decorative barcode + pseudo ticket number (seeded off the trade id — not scannable, just texture)
+  const rng = seededRng(trade.id || trade.symbol || "ticket");
+  let bx = pad;
+  const barTop = barcodeY, barBottom = barcodeY + barcodeH - 20;
+  ctx.fillStyle = "#ffffff45";
+  while (bx < W - pad - 4) {
+    const bw = 2 + Math.round(rng() * 4);
+    const tall = rng() > 0.3;
+    ctx.fillRect(bx, barTop, bw, tall ? barBottom - barTop : (barBottom - barTop) * 0.6);
+    bx += bw + 3 + Math.round(rng() * 5);
+  }
+  const ticketNo = `TCKT·${String(trade.id || "").replace(/[^A-Za-z0-9]/g, "").slice(-8).toUpperCase() || "000000"}`;
+  ctx.textAlign = "left"; ctx.fillStyle = "#4b5266"; ctx.font = "600 13px Inter, sans-serif";
+  ctx.fillText(ticketNo, pad, barcodeY + barcodeH + 2);
 
   // Footer
   ctx.strokeStyle = "#ffffff14"; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(pad, footerY - 6); ctx.lineTo(W - pad, footerY - 6); ctx.stroke();
-  ctx.textAlign = "center"; ctx.fillStyle = "#8a93a8"; ctx.font = "600 17px Inter, sans-serif";
-  ctx.fillText("Journal your own trades · THE ACE LOUNGE", W / 2, footerY + 20);
+  ctx.beginPath(); ctx.moveTo(pad, footerY - 8); ctx.lineTo(W - pad, footerY - 8); ctx.stroke();
+  ctx.textAlign = "center"; ctx.fillStyle = "#8a93a8"; ctx.font = "700 17px Inter, sans-serif";
+  ctx.fillText(SHARE_BRAND, W / 2, footerY + 18);
   ctx.fillStyle = "#4b5266"; ctx.font = "500 13px Inter, sans-serif";
-  ctx.fillText("One Trade Never Makes A Trader", W / 2, footerY + 42);
+  ctx.fillText("Journal your own trades · Not financial advice", W / 2, footerY + 40);
 }
 
 async function renderShareCardPNG(trade, screenshotUrl, frame) {
+
   if (document.fonts?.ready) { try { await document.fonts.ready; } catch {} }
   const layout = shareCardLayout(frame.aspect);
   const canvas = document.createElement("canvas");
@@ -2243,7 +2311,7 @@ function FrameChartModal({ trade, onCancel, onConfirm }) {
 
   const PREVIEW_W = 452;
   const layout = shareCardLayout(aspect);
-  const previewH = Math.round(layout.chartH * (PREVIEW_W / layout.W));
+  const previewH = Math.round(layout.heroH * (PREVIEW_W / layout.W));
 
   useEffect(() => {
     const canvas = canvasRef.current;
