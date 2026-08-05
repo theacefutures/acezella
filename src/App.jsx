@@ -1683,10 +1683,10 @@ function AddTradeModal({ state, dispatch }) {
   const [notebookOpen, setNotebookOpen] = useState(!!(editing && (editing.notes || editing.noteIdea || editing.noteEmotion || editing.noteResult)));
   const set = k => v => setForm(f => ({ ...f, [k]: v }));
 
-  // Win → force +, Loss → force −, Breakeven → force 0. Applied both when the
-  // outcome itself is (re)selected and whenever P&L / Pips are typed in.
+  // Win → force +, Loss → force −. Breakeven leaves whatever value is
+  // already there alone — BE trades aren't always exactly $0 (fees, partial
+  // slippage, etc.), so the trader can type any +/-/0 amount by hand.
   const applySign = (outcome, val) => {
-    if (outcome === "BE") return "0";
     if (val === "" || val === null || val === undefined) return val;
     const num = parseFloat(val);
     if (isNaN(num)) return val;
@@ -2002,9 +2002,9 @@ function AddTradeModal({ state, dispatch }) {
         <div style={{ marginBottom: 20 }}>
           <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 8 }}>P&amp;L</div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <input type="number" value={form.pnl} onChange={e => setSignedField("pnl")(e.target.value)} readOnly={form.outcome === "BE"} placeholder="Enter P&L or use auto-populate" style={{ ...modalInputStyle, flex: "1 1 160px", minWidth: 0, opacity: form.outcome === "BE" ? 0.55 : 1 }} />
+            <input type="number" value={form.pnl} onChange={e => setSignedField("pnl")(e.target.value)} placeholder="Enter P&L or use auto-populate" style={{ ...modalInputStyle, flex: "1 1 160px", minWidth: 0 }} />
             {isMGC && (
-              <button onClick={applyAutoPnl} disabled={autoPnl == null || form.outcome === "BE"} style={{ background: (autoPnl == null || form.outcome === "BE") ? C.surfaceHigh : C.accentDim, border: `1px solid ${(autoPnl == null || form.outcome === "BE") ? C.border : C.accent + "55"}`, color: (autoPnl == null || form.outcome === "BE") ? C.textDim : C.accent, borderRadius: 10, padding: "0 18px", fontWeight: 700, fontSize: 13, cursor: (autoPnl == null || form.outcome === "BE") ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0, whiteSpace: "nowrap", minHeight: 44 }}>🧮 Auto</button>
+              <button onClick={applyAutoPnl} disabled={autoPnl == null} style={{ background: autoPnl == null ? C.surfaceHigh : C.accentDim, border: `1px solid ${autoPnl == null ? C.border : C.accent + "55"}`, color: autoPnl == null ? C.textDim : C.accent, borderRadius: 10, padding: "0 18px", fontWeight: 700, fontSize: 13, cursor: autoPnl == null ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0, whiteSpace: "nowrap", minHeight: 44 }}>🧮 Auto</button>
             )}
           </div>
           {isMGC && autoPnl != null && (
@@ -2018,9 +2018,9 @@ function AddTradeModal({ state, dispatch }) {
         <div style={{ marginBottom: 20 }}>
           <ModalField label="Pips" sub="+ gain / − loss">
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <input type="number" value={form.pips} onChange={e => setSignedField("pips")(e.target.value)} readOnly={form.outcome === "BE"} placeholder="e.g. 12.5 or -8" style={{ ...modalInputStyle, flex: "1 1 160px", minWidth: 0, opacity: form.outcome === "BE" ? 0.55 : 1 }} />
+              <input type="number" value={form.pips} onChange={e => setSignedField("pips")(e.target.value)} placeholder="e.g. 12.5 or -8" style={{ ...modalInputStyle, flex: "1 1 160px", minWidth: 0 }} />
               {isMGC && (
-                <button onClick={applyAutoPipsMGC} disabled={autoPipsMGC == null || form.outcome === "BE"} style={{ background: (autoPipsMGC == null || form.outcome === "BE") ? C.surfaceHigh : C.accentDim, border: `1px solid ${(autoPipsMGC == null || form.outcome === "BE") ? C.border : C.accent + "55"}`, color: (autoPipsMGC == null || form.outcome === "BE") ? C.textDim : C.accent, borderRadius: 10, padding: "0 18px", fontWeight: 700, fontSize: 13, cursor: (autoPipsMGC == null || form.outcome === "BE") ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0, whiteSpace: "nowrap", minHeight: 44 }}>🥇 Auto (MGC)</button>
+                <button onClick={applyAutoPipsMGC} disabled={autoPipsMGC == null} style={{ background: autoPipsMGC == null ? C.surfaceHigh : C.accentDim, border: `1px solid ${autoPipsMGC == null ? C.border : C.accent + "55"}`, color: autoPipsMGC == null ? C.textDim : C.accent, borderRadius: 10, padding: "0 18px", fontWeight: 700, fontSize: 13, cursor: autoPipsMGC == null ? "not-allowed" : "pointer", display: "flex", alignItems: "center", justifyContent: "center", gap: 6, flexShrink: 0, whiteSpace: "nowrap", minHeight: 44 }}>🥇 Auto (MGC)</button>
               )}
             </div>
           </ModalField>
@@ -2271,7 +2271,7 @@ function drawShareCard(ctx, layout, trade, chartImg, frame) {
   ctx.textAlign = "center"; ctx.fillStyle = "#8a93a8"; ctx.font = "700 17px Inter, sans-serif";
   ctx.fillText(SHARE_BRAND, W / 2, footerY + 18);
   ctx.fillStyle = "#4b5266"; ctx.font = "500 13px Inter, sans-serif";
-  ctx.fillText("Journal your own trades · Not financial advice", W / 2, footerY + 40);
+  ctx.fillText("One Trade Never Makes A Trader", W / 2, footerY + 40);
 }
 
 async function renderShareCardPNG(trade, screenshotUrl, frame) {
