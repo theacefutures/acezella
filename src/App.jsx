@@ -2079,6 +2079,313 @@ function ShareModal({ trade, dispatch }) {
 }
 
 
+// ─── SOCIAL SHARE CARD (PNG export) ──────────────────────────────────────────
+// Renders a trade as a shareable social-media card (brand header, big P&L,
+// the trade's chart screenshot cropped/zoomed by the user, and quick-glance
+// badges). The same draw routine backs both the live "frame your chart"
+// preview and the full-resolution PNG export, so the preview is truly
+// WYSIWYG — no surprises between what's shown and what gets downloaded.
+const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
+const SHARE_CARD_W = 1080;
+const SHARE_CHART_H = { wide: 460, tall: 680 };
+
+function loadImageFromURL(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("Couldn't load chart image"));
+    img.src = url;
+  });
+}
+
+function roundRectPath(ctx, x, y, w, h, r) {
+  const rr = Math.min(r, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + rr, y);
+  ctx.arcTo(x + w, y, x + w, y + h, rr);
+  ctx.arcTo(x + w, y + h, x, y + h, rr);
+  ctx.arcTo(x, y + h, x, y, rr);
+  ctx.arcTo(x, y, x + w, y, rr);
+  ctx.closePath();
+}
+
+// All fixed pixel positions for the card, given the chosen chart aspect —
+// drives both the export canvas's height and the live preview, so they
+// always agree.
+function shareCardLayout(aspect) {
+  const W = SHARE_CARD_W, pad = 64;
+  const headerY = pad, headerH = 52;
+  const symbolY = headerY + headerH + 36, symbolH = 30;
+  const pnlY = symbolY + symbolH + 8, pnlH = 108;
+  const chartY = pnlY + pnlH + 36, chartH = SHARE_CHART_H[aspect] || SHARE_CHART_H.wide;
+  const badgesY = chartY + chartH + 32, badgesH = 88;
+  const footerY = badgesY + badgesH + 30, footerH = 56;
+  const H = footerY + footerH + pad;
+  return { W, H, pad, headerY, headerH, symbolY, pnlY, pnlH, chartY, chartH, badgesY, badgesH, footerY };
+}
+
+// Draws the pan/zoomed crop of `img` into rect (x,y,w,h). zoom 1 = plain
+// object-fit:cover; zoom >1 crops in further. offsetXFrac/offsetYFrac
+// (-1..1) position the crop within however much pan room the zoom allows.
+function drawShareChartCrop(ctx, img, x, y, w, h, zoom, offsetXFrac, offsetYFrac) {
+  const iw = img.width, ih = img.height, cr = w / h, ir = iw / ih;
+  let sw0, sh0;
+  if (ir > cr) { sh0 = ih; sw0 = sh0 * cr; } else { sw0 = iw; sh0 = sw0 / cr; }
+  const sw = Math.min(iw, sw0 / (zoom || 1)), sh = Math.min(ih, sh0 / (zoom || 1));
+  const panX = Math.max(0, iw - sw), panY = Math.max(0, ih - sh);
+  let sx = (iw - sw) / 2 + (offsetXFrac || 0) * (panX / 2);
+  let sy = (ih - sh) / 2 + (offsetYFrac || 0) * (panY / 2);
+  sx = clamp(sx, 0, iw - sw); sy = clamp(sy, 0, ih - sh);
+  ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+}
+
+// Core draw routine, shared by the live chart-crop preview (small canvas,
+// chart region only) and the full card export (whole layout) — see below.
+function drawShareCard(ctx, layout, trade, chartImg, frame) {
+  const { W, H, pad, headerY, symbolY, pnlY, pnlH, chartY, chartH, badgesY, badgesH, footerY } = layout;
+  const pnlColor = trade.outcome === "BE" ? "#f5a623" : trade.pnl >= 0 ? "#32D18D" : "#ff4466";
+
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, "#0b1020"); bg.addColorStop(1, "#05070d");
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  const glow = ctx.createRadialGradient(W * 0.82, H * 0.04, 0, W * 0.82, H * 0.04, W * 0.75);
+  glow.addColorStop(0, pnlColor + "20"); glow.addColorStop(1, "transparent");
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
+
+  // Header — logo + wordmark, date top-right
+  ctx.fillStyle = "#32D18D";
+  roundRectPath(ctx, pad, headerY, 44, 44, 12); ctx.fill();
+  ctx.textBaseline = "middle"; ctx.textAlign = "center";
+  ctx.fillStyle = "#04140d"; ctx.font = "800 22px Inter, sans-serif";
+  ctx.fillText("A", pad + 22, headerY + 24);
+  ctx.textAlign = "left"; ctx.fillStyle = "#f2f4f9"; ctx.font = "800 24px Inter, sans-serif";
+  ctx.fillText("ACEZELLA", pad + 58, headerY + 24);
+  ctx.textAlign = "right"; ctx.fillStyle = "#8a93a8"; ctx.font = "500 20px Inter, sans-serif";
+  ctx.fillText(fmtDate(trade.date), W - pad, headerY + 24);
+
+  // Symbol
+  ctx.textBaseline = "alphabetic"; ctx.textAlign = "center";
+  ctx.fillStyle = "#8a93a8"; ctx.font = "700 22px Inter, sans-serif";
+  ctx.fillText((trade.symbol || "").toUpperCase(), W / 2, symbolY + 22);
+
+  // P&L — huge
+  ctx.fillStyle = pnlColor; ctx.font = "800 88px Inter, sans-serif";
+  ctx.fillText(fmt$(trade.pnl), W / 2, pnlY + pnlH - 18);
+
+  // Chart
+  roundRectPath(ctx, pad, chartY, W - pad * 2, chartH, 20);
+  ctx.save(); ctx.clip();
+  if (chartImg) drawShareChartCrop(ctx, chartImg, pad, chartY, W - pad * 2, chartH, frame.zoom, frame.offsetX, frame.offsetY);
+  else { ctx.fillStyle = "#151b2c"; ctx.fillRect(pad, chartY, W - pad * 2, chartH); }
+  ctx.restore();
+  ctx.strokeStyle = "#ffffff14"; ctx.lineWidth = 1;
+  roundRectPath(ctx, pad, chartY, W - pad * 2, chartH, 20); ctx.stroke();
+
+  // Badge row
+  const badgeDefs = [["DIRECTION", trade.direction], ["SESSION", trade.session], ["SETUP", trade.setup], ["OUTCOME", trade.outcome]];
+  const gap = 18, bw = (W - pad * 2 - gap * 3) / 4;
+  badgeDefs.forEach(([label, value], i) => {
+    const bx = pad + i * (bw + gap);
+    ctx.fillStyle = "#ffffff0d"; roundRectPath(ctx, bx, badgesY, bw, badgesH, 14); ctx.fill();
+    ctx.strokeStyle = "#ffffff1a"; ctx.lineWidth = 1; roundRectPath(ctx, bx, badgesY, bw, badgesH, 14); ctx.stroke();
+    ctx.textAlign = "center";
+    ctx.fillStyle = "#6b7488"; ctx.font = "700 13px Inter, sans-serif";
+    ctx.fillText(label, bx + bw / 2, badgesY + 30);
+    ctx.fillStyle = "#eef0f5"; ctx.font = "700 18px Inter, sans-serif";
+    let val = String(value || "—");
+    while (ctx.measureText(val).width > bw - 16 && val.length > 3) val = val.slice(0, -2) + "…";
+    ctx.fillText(val, bx + bw / 2, badgesY + 60);
+  });
+
+  // Footer
+  ctx.strokeStyle = "#ffffff14"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(pad, footerY - 6); ctx.lineTo(W - pad, footerY - 6); ctx.stroke();
+  ctx.textAlign = "center"; ctx.fillStyle = "#8a93a8"; ctx.font = "600 17px Inter, sans-serif";
+  ctx.fillText("Journal your own trades · ACEZELLA", W / 2, footerY + 20);
+  ctx.fillStyle = "#4b5266"; ctx.font = "500 13px Inter, sans-serif";
+  ctx.fillText("Not financial advice", W / 2, footerY + 42);
+}
+
+async function renderShareCardPNG(trade, screenshotUrl, frame) {
+  if (document.fonts?.ready) { try { await document.fonts.ready; } catch {} }
+  const layout = shareCardLayout(frame.aspect);
+  const canvas = document.createElement("canvas");
+  canvas.width = layout.W; canvas.height = layout.H;
+  const ctx = canvas.getContext("2d");
+  let img = null;
+  if (screenshotUrl) { try { img = await loadImageFromURL(screenshotUrl); } catch { img = null; } }
+  drawShareCard(ctx, layout, trade, img, frame);
+  return new Promise(resolve => canvas.toBlob(resolve, "image/png"));
+}
+
+// Step 1 of the image flow — pick which screenshot, its aspect, and its
+// crop/zoom. The chart-crop preview canvas uses the exact same
+// drawShareChartCrop() call the final export uses, just at a smaller size.
+function FrameChartModal({ trade, onCancel, onConfirm }) {
+  const screenshots = trade.screenshots || [];
+  const [shotIndex, setShotIndex] = useState(0);
+  const [aspect, setAspect] = useState("wide");
+  const [zoom, setZoom] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [imgEl, setImgEl] = useState(null);
+  const [generating, setGenerating] = useState(false);
+  const canvasRef = useRef();
+  const dragRef = useRef(null);
+  const shot = screenshots[shotIndex];
+
+  useEffect(() => {
+    setImgEl(null);
+    if (shot?.url) loadImageFromURL(shot.url).then(setImgEl).catch(() => setImgEl(null));
+  }, [shot?.url]);
+
+  useEffect(() => { setZoom(1); setOffset({ x: 0, y: 0 }); }, [shotIndex, aspect]);
+
+  const PREVIEW_W = 452;
+  const layout = shareCardLayout(aspect);
+  const previewH = Math.round(layout.chartH * (PREVIEW_W / layout.W));
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    canvas.width = PREVIEW_W; canvas.height = previewH;
+    ctx.fillStyle = "#151b2c"; ctx.fillRect(0, 0, PREVIEW_W, previewH);
+    if (imgEl) drawShareChartCrop(ctx, imgEl, 0, 0, PREVIEW_W, previewH, zoom, offset.x, offset.y);
+  }, [imgEl, zoom, offset, previewH]);
+
+  const onPointerDown = e => { dragRef.current = { startX: e.clientX, startY: e.clientY, offset }; e.currentTarget.setPointerCapture(e.pointerId); };
+  const onPointerMove = e => {
+    if (!dragRef.current) return;
+    const dx = e.clientX - dragRef.current.startX, dy = e.clientY - dragRef.current.startY;
+    setOffset({
+      x: clamp(dragRef.current.offset.x - dx / (PREVIEW_W / 2), -1, 1),
+      y: clamp(dragRef.current.offset.y - dy / (previewH / 2), -1, 1),
+    });
+  };
+  const onPointerUp = () => { dragRef.current = null; };
+
+  const create = async () => {
+    if (!shot?.url || generating) return;
+    setGenerating(true);
+    try { await onConfirm({ screenshotUrl: shot.url, aspect, zoom, offsetX: offset.x, offsetY: offset.y }); }
+    finally { setGenerating(false); }
+  };
+
+  const toggleBtn = (val, label) => (
+    <button onClick={() => setAspect(val)} style={{ flex: 1, padding: "9px 0", borderRadius: 10, border: `1px solid ${aspect === val ? C.accent : C.border}`, background: aspect === val ? C.accentDim : "transparent", color: aspect === val ? C.accent : C.textMuted, fontWeight: 700, fontSize: 13, cursor: "pointer" }}>{label}</button>
+  );
+
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 210, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={e => e.target === e.currentTarget && onCancel()}>
+      <div className="fade-in" onClick={e => e.stopPropagation()} style={{ background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24, width: "100%", maxWidth: 500 }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800, flex: 1 }}>Frame your chart</h2>
+          <button onClick={onCancel} style={{ background: "none", border: "none", color: C.textMuted, fontSize: 22, cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ fontSize: 12.5, color: C.textMuted, marginBottom: 14 }}>Drag to move, use the slider to zoom. What you see is what goes on the card.</div>
+
+        {screenshots.length > 1 && (
+          <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+            {screenshots.map((s, i) => (
+              <button key={i} onClick={() => setShotIndex(i)} style={{ width: 64, height: 44, borderRadius: 8, overflow: "hidden", border: `2px solid ${i === shotIndex ? C.accent : C.border}`, padding: 0, background: C.surfaceHigh, cursor: "pointer" }}>
+                <img src={s.url} style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }} />
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          {toggleBtn("wide", "▭ Wide")}
+          {toggleBtn("tall", "▯ Tall")}
+        </div>
+
+        <div style={{ borderRadius: 14, overflow: "hidden", border: `1px solid ${C.border}`, marginBottom: 16, position: "relative", touchAction: "none", cursor: imgEl ? "grab" : "default" }}
+          onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerLeave={onPointerUp}>
+          <canvas ref={canvasRef} style={{ width: "100%", height: previewH, display: "block" }} />
+          {!imgEl && (
+            <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", color: C.textDim, fontSize: 13, pointerEvents: "none" }}>
+              {screenshots.length ? "Loading chart…" : "No screenshots on this trade"}
+            </div>
+          )}
+        </div>
+
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 20 }}>
+          <span style={{ color: C.textMuted, fontSize: 16 }}>−</span>
+          <input type="range" min="1" max="3" step="0.01" value={zoom} onChange={e => setZoom(parseFloat(e.target.value))} style={{ flex: 1 }} />
+          <span style={{ color: C.textMuted, fontSize: 16 }}>+</span>
+          <Btn small variant="ghost" onClick={() => { setZoom(1); setOffset({ x: 0, y: 0 }); }}>Reset</Btn>
+        </div>
+
+        <div style={{ display: "flex", gap: 10 }}>
+          <Btn variant="ghost" onClick={onCancel} style={{ flex: 1, justifyContent: "center" }}>Cancel</Btn>
+          <Btn disabled={!imgEl || generating} onClick={create} style={{ flex: 1, justifyContent: "center" }}>{generating ? "Creating…" : "Create Image"}</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Step 2 — final PNG preview with Download / Copy.
+function ShareCardResultModal({ trade, pngUrl, onBack, onClose }) {
+  const [copied, setCopied] = useState(false);
+  const download = () => {
+    const a = document.createElement("a");
+    a.href = pngUrl; a.download = `${(trade.symbol || "trade").replace(/[^a-z0-9]/gi, "_")}_${trade.date ? trade.date.slice(0, 10) : "trade"}.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+  };
+  const copyImage = async () => {
+    try {
+      const res = await fetch(pngUrl); const blob = await res.blob();
+      await navigator.clipboard.write([new window.ClipboardItem({ "image/png": blob })]);
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
+    } catch { download(); }
+  };
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 210, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="fade-in" onClick={e => e.stopPropagation()} style={{ background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24, width: "100%", maxWidth: 380, maxHeight: "92vh", overflowY: "auto" }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 14 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800, flex: 1 }}>Your Trade Card</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: C.textMuted, fontSize: 22, cursor: "pointer" }}>×</button>
+        </div>
+        <img src={pngUrl} style={{ width: "100%", borderRadius: 12, border: `1px solid ${C.border}`, marginBottom: 18, display: "block" }} />
+        <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
+          <Btn variant="ghost" onClick={onBack} style={{ flex: 1, justifyContent: "center" }}>← Re-frame</Btn>
+          <Btn onClick={download} style={{ flex: 1, justifyContent: "center" }}>⬇ Download PNG</Btn>
+        </div>
+        <Btn variant="ghost" onClick={copyImage} style={{ width: "100%", justifyContent: "center" }}>{copied ? "✓ Copied!" : "📋 Copy Image"}</Btn>
+      </div>
+    </div>
+  );
+}
+
+// Step 0 — chooser between the new PNG card and the existing view-only link.
+function ShareChooserModal({ trade, onClose, onPickImage, onPickLink }) {
+  const hasScreenshots = (trade.screenshots || []).length > 0;
+  const row = (icon, title, sub, onClick, disabled) => (
+    <button onClick={disabled ? undefined : onClick} style={{ width: "100%", textAlign: "left", display: "flex", alignItems: "center", gap: 14, padding: 16, borderRadius: 12, border: `1px solid ${C.border}`, background: C.surfaceHigh, color: C.text, cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1, marginBottom: 10 }}>
+      <span style={{ fontSize: 22 }}>{icon}</span>
+      <span>
+        <div style={{ fontWeight: 700, fontSize: 14 }}>{title}</div>
+        <div style={{ fontSize: 12, color: C.textMuted }}>{sub}</div>
+      </span>
+    </button>
+  );
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="fade-in" onClick={e => e.stopPropagation()} style={{ background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 24, width: "100%", maxWidth: 400 }}>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 16 }}>
+          <h2 style={{ fontSize: 18, fontWeight: 800, flex: 1 }}>Share</h2>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: C.textMuted, fontSize: 22, cursor: "pointer" }}>×</button>
+        </div>
+        <div style={{ fontSize: 12.5, color: C.textDim, marginBottom: 16 }}>{trade.symbol} · {fmtDate(trade.date)} — 1 trade</div>
+        {row("📸", "Image for social", hasScreenshots ? "A card you can post anywhere" : "Add a chart screenshot to this trade first", onPickImage, !hasScreenshots)}
+        {row("🔗", "Shareable link", "Anyone with the link can view it", onPickLink, false)}
+      </div>
+    </div>
+  );
+}
+
 // ─── IMAGE LIGHTBOX (in-app viewer — avoids the data: URL new-tab block) ────
 // images: array of URL strings. index: currently shown position. onNavigate(newIndex): called when user moves prev/next.
 function ImageLightbox({ images, index, onClose, onNavigate, labels, title = "Trade Screenshot" }) {
@@ -3814,7 +4121,9 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
   const [noteEmotion, setNoteEmotion] = useState(trade.noteEmotion || "");
   const [noteResult, setNoteResult] = useState(trade.noteResult || "");
   const [editNotes, setEditNotes] = useState(false);
-  const [showShare, setShowShare] = useState(false);
+  const [shareStep, setShareStep] = useState(null); // null | "choose" | "frame" | "link" | "result"
+  const [sharePngUrl, setSharePngUrl] = useState(null);
+  const closeShare = () => { setShareStep(null); if (sharePngUrl) { URL.revokeObjectURL(sharePngUrl); setSharePngUrl(null); } };
   const [lightboxIndex, setLightboxIndex] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [hoverSimilarId, setHoverSimilarId] = useState(null);
@@ -3862,10 +4171,33 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
   return (
     <div className="fade-in" style={{ height: "100%", overflowY: "auto", padding: 24 }}>
       {lightboxIndex !== null && <ImageLightbox images={(trade.screenshots || []).map(s => s.url)} labels={(trade.screenshots || []).map(s => s.timeframe)} index={lightboxIndex} onClose={() => setLightboxIndex(null)} onNavigate={setLightboxIndex} />}
-      {showShare && (
-        <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={() => setShowShare(false)}>
+      {shareStep === "choose" && (
+        <ShareChooserModal
+          trade={trade}
+          onClose={closeShare}
+          onPickImage={() => setShareStep("frame")}
+          onPickLink={() => setShareStep("link")}
+        />
+      )}
+      {shareStep === "frame" && (
+        <FrameChartModal
+          trade={trade}
+          onCancel={() => setShareStep("choose")}
+          onConfirm={async (frame) => {
+            const blob = await renderShareCardPNG(trade, frame.screenshotUrl, frame);
+            if (sharePngUrl) URL.revokeObjectURL(sharePngUrl);
+            setSharePngUrl(URL.createObjectURL(blob));
+            setShareStep("result");
+          }}
+        />
+      )}
+      {shareStep === "result" && sharePngUrl && (
+        <ShareCardResultModal trade={trade} pngUrl={sharePngUrl} onBack={() => setShareStep("frame")} onClose={closeShare} />
+      )}
+      {shareStep === "link" && (
+        <div style={{ position: "fixed", inset: 0, background: "#000c", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={closeShare}>
           <div className="fade-in" onClick={e => e.stopPropagation()} style={{ background: C.modalBg, border: `1px solid ${C.border}`, borderRadius: 16, padding: 28, width: "100%", maxWidth: 500 }}>
-            <div style={{ display: "flex", alignItems: "center", marginBottom: 20 }}><h2 style={{ fontSize: 18, fontWeight: 800, flex: 1 }}>Share Trade</h2><button onClick={() => setShowShare(false)} style={{ background: "none", border: "none", color: C.textMuted, fontSize: 22, cursor: "pointer" }}>×</button></div>
+            <div style={{ display: "flex", alignItems: "center", marginBottom: 20 }}><h2 style={{ fontSize: 18, fontWeight: 800, flex: 1 }}>Share Trade</h2><button onClick={closeShare} style={{ background: "none", border: "none", color: C.textMuted, fontSize: 22, cursor: "pointer" }}>×</button></div>
             <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 14 }}>Anyone with this link can view your trade — no account needed.</div>
             <ShareLinkBox trade={trade} />
           </div>
@@ -3875,7 +4207,7 @@ function TradeDetail({ trade, state, dispatch, onBack, onSelectTrade, setPage })
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 16 }}>
         <Btn small variant="gradient" onClick={onBack}>← Back to Trades</Btn>
         <div style={{ flex: 1 }} />
-        <Btn small variant="ghost" onClick={() => setShowShare(true)}>🔗 Share</Btn>
+        <Btn small variant="ghost" onClick={() => setShareStep("choose")}>🔗 Share</Btn>
         <Btn small variant="ghost" onClick={() => dispatch({ type: "OPEN_MODAL", modal: { type: "add_trade", trade } })}>✏️ Edit</Btn>
         <CopyToAccountMenu trade={trade} state={state} dispatch={dispatch} />
         <Btn small variant="danger" onClick={() => setShowDeleteConfirm(true)}>Delete</Btn>
