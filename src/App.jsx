@@ -2080,15 +2080,16 @@ function ShareModal({ trade, dispatch }) {
 
 
 // ─── SOCIAL SHARE CARD (PNG export) ──────────────────────────────────────────
-// Renders a trade as a "Trade Ticket" — a full-bleed chart hero with a
-// rotated wax-seal P&L stamp straddling the tear line, then a perforated
-// ticket stub (fields + a decorative barcode) below. The same draw routine
-// backs both the live "frame your chart" preview and the full-resolution
-// PNG export, so the preview is truly WYSIWYG — no surprises between what's
-// shown and what gets downloaded.
+// Renders a trade as a full "trade report" card — brand header, a big P&L
+// beside icon stat rows (Direction / Session / Setup / Outcome), the trade's
+// chart screenshot cropped/zoomed by the user, a daily rotating mindset
+// quote, and a branded footer. The same draw routine backs both the live
+// "frame your chart" preview and the full-resolution PNG export, so the
+// preview is truly WYSIWYG — no surprises between what's shown and what
+// gets downloaded.
 const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const SHARE_CARD_W = 1080;
-const SHARE_HERO_H = { wide: 620, tall: 900 };
+const SHARE_CHART_H = { wide: 460, tall: 660 };
 const SHARE_BRAND = "THE ACE LOUNGE";
 
 function loadImageFromURL(url) {
@@ -2112,34 +2113,110 @@ function roundRectPath(ctx, x, y, w, h, r) {
   ctx.closePath();
 }
 
-// Deterministic tiny PRNG (mulberry32), seeded from the trade id, so the
-// decorative "barcode" is stable for a given trade instead of re-randomizing
-// on every re-render.
-function seededRng(seedStr) {
-  let h = 1779033703 ^ (seedStr || "").length;
-  for (let i = 0; i < (seedStr || "").length; i++) { h = Math.imul(h ^ seedStr.charCodeAt(i), 3432918353); h = (h << 13) | (h >>> 19); }
-  return function () {
-    h = Math.imul(h ^ (h >>> 16), 2246822507);
-    h = Math.imul(h ^ (h >>> 13), 3266489909);
-    h ^= h >>> 16;
-    return (h >>> 0) / 4294967296;
-  };
+// Wraps `text` to fit within `maxWidth`, returns an array of lines. Assumes
+// ctx.font is already set to the font that should be measured.
+function wrapCanvasText(ctx, text, maxWidth) {
+  const words = (text || "").split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = "";
+  for (const word of words) {
+    const test = line ? line + " " + word : word;
+    if (ctx.measureText(test).width > maxWidth && line) { lines.push(line); line = word; }
+    else line = test;
+  }
+  if (line) lines.push(line);
+  return lines;
 }
 
-// All fixed pixel positions for the ticket, given the chosen hero aspect —
+// ── Daily mindset quotes ─────────────────────────────────────────────────
+// Rotates automatically once per calendar day (deterministic by day-of-year
+// + year, so every device shows the same quote on the same day without
+// needing a server). Original lines, grouped by theme.
+const DAILY_QUOTES = [
+  "One trade never makes a trader — the next one matters just as much.",
+  "Discipline is choosing what you want most over what you want now.",
+  "Patience isn't waiting. It's how you act while you wait for your setup.",
+  "The market rewards process, not urgency.",
+  "A good exit protects tomorrow's opportunities as much as today's account.",
+  "Your edge only works if you let it play out enough times.",
+  "Time in the market beats timing every candle.",
+  "Discipline is remembering the plan after the trade is already open.",
+  "Small, consistent decisions compound faster than one big swing.",
+  "The best traders are boring on purpose.",
+  "Losses are tuition. Keep showing up to class.",
+  "You don't need to be right — you need to be disciplined.",
+  "Protect your focus like you protect your capital.",
+  "Every session is a fresh decision, not a continuation of yesterday's mood.",
+  "Slow down at the entry so you don't have to rush the exit.",
+  "Consistency is a decision made before the chart opens, not during it.",
+  "The plan is only as good as your patience to follow it.",
+  "Waiting for the setup is still doing the work.",
+  "Great trades are built in the preparation, not the execution.",
+  "One disciplined no is worth ten undisciplined yeses.",
+];
+function dailyQuote(date = new Date()) {
+  const start = new Date(date.getFullYear(), 0, 0);
+  const dayOfYear = Math.floor((date - start) / 86400000);
+  const idx = (dayOfYear + date.getFullYear()) % DAILY_QUOTES.length;
+  return DAILY_QUOTES[idx];
+}
+
+// Small vector icon set drawn directly on the canvas (no emoji/webfont
+// glyphs — keeps rendering identical across every browser and OS).
+function drawStatIcon(ctx, cx, cy, r, type, color) {
+  ctx.save();
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = 2.5; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  if (type === "direction-long" || type === "direction-short") {
+    const up = type === "direction-long";
+    ctx.beginPath();
+    ctx.moveTo(cx, cy + (up ? -r * 0.55 : r * 0.55));
+    ctx.lineTo(cx - r * 0.42, cy + (up ? r * 0.15 : -r * 0.15));
+    ctx.lineTo(cx - r * 0.18, cy + (up ? r * 0.15 : -r * 0.15));
+    ctx.lineTo(cx - r * 0.18, cy + (up ? r * 0.55 : -r * 0.55));
+    ctx.lineTo(cx + r * 0.18, cy + (up ? r * 0.55 : -r * 0.55));
+    ctx.lineTo(cx + r * 0.18, cy + (up ? r * 0.15 : -r * 0.15));
+    ctx.lineTo(cx + r * 0.42, cy + (up ? r * 0.15 : -r * 0.15));
+    ctx.closePath(); ctx.fill();
+  } else if (type === "session") {
+    ctx.beginPath(); ctx.arc(cx, cy, r * 0.55, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(cx, cy, r * 0.26, r * 0.55, 0, 0, Math.PI * 2); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx - r * 0.55, cy); ctx.lineTo(cx + r * 0.55, cy); ctx.stroke();
+  } else if (type === "setup") {
+    [-0.32, 0, 0.32].forEach((off, i) => {
+      const ly = cy + off * r * 1.5;
+      ctx.beginPath(); ctx.moveTo(cx - r * 0.5, ly); ctx.lineTo(cx + r * 0.5, ly); ctx.stroke();
+      ctx.beginPath(); ctx.arc(cx + [0.12, -0.1, 0.2][i] * r, ly, r * 0.14, 0, Math.PI * 2); ctx.fill();
+    });
+  } else if (type === "outcome-win") {
+    ctx.beginPath(); ctx.moveTo(cx - r * 0.4, cy); ctx.lineTo(cx - r * 0.08, cy + r * 0.32); ctx.lineTo(cx + r * 0.45, cy - r * 0.35); ctx.stroke();
+  } else if (type === "outcome-loss") {
+    ctx.beginPath(); ctx.moveTo(cx - r * 0.32, cy - r * 0.32); ctx.lineTo(cx + r * 0.32, cy + r * 0.32); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx + r * 0.32, cy - r * 0.32); ctx.lineTo(cx - r * 0.32, cy + r * 0.32); ctx.stroke();
+  } else { // outcome-be
+    ctx.beginPath(); ctx.moveTo(cx - r * 0.38, cy); ctx.lineTo(cx + r * 0.38, cy); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawTargetIcon(ctx, cx, cy, r, color) {
+  ctx.save(); ctx.strokeStyle = color; ctx.lineWidth = 2.5;
+  [1, 0.62, 0.26].forEach(f => { ctx.beginPath(); ctx.arc(cx, cy, r * f, 0, Math.PI * 2); ctx.stroke(); });
+  ctx.fillStyle = color; ctx.beginPath(); ctx.arc(cx, cy, r * 0.08, 0, Math.PI * 2); ctx.fill();
+  ctx.restore();
+}
+
+// All fixed pixel positions for the card, given the chosen chart aspect —
 // drives both the export canvas's height and the live preview, so they
 // always agree.
 function shareCardLayout(aspect) {
-  const W = SHARE_CARD_W, pad = 64;
-  const heroH = SHARE_HERO_H[aspect] || SHARE_HERO_H.wide;
-  const stampW = 400, stampH = 132, stampY = heroH; // stamp is centered ON the seam
-  const symbolY = heroH + stampH / 2 + 46, symbolH = 40;
-  const perfY = symbolY + symbolH + 26;
-  const statsY = perfY + 34, statsH = 224;
-  const barcodeY = statsY + statsH + 30, barcodeH = 60;
-  const footerY = barcodeY + barcodeH + 34, footerH = 60;
-  const H = footerY + footerH + 46;
-  return { W, H, pad, heroH, stampW, stampH, stampY, symbolY, symbolH, perfY, statsY, statsH, barcodeY, barcodeH, footerY };
+  const W = SHARE_CARD_W, pad = 56;
+  const headerY = 48, headerH = 72;
+  const statsY = headerY + headerH + 40, statsH = 360;
+  const chartY = statsY + statsH + 40, chartH = SHARE_CHART_H[aspect] || SHARE_CHART_H.wide;
+  const quoteY = chartY + chartH + 36, quoteH = 176;
+  const taglineY = quoteY + quoteH + 46;
+  const H = taglineY + 34;
+  return { W, H, pad, headerY, headerH, statsY, statsH, chartY, chartH, quoteY, quoteH, taglineY };
 }
 
 // Draws the pan/zoomed crop of `img` into rect (x,y,w,h). zoom 1 = plain
@@ -2158,124 +2235,106 @@ function drawShareChartCrop(ctx, img, x, y, w, h, zoom, offsetXFrac, offsetYFrac
 }
 
 // Core draw routine, shared by the live chart-crop preview (small canvas,
-// hero region only) and the full ticket export (whole layout) — see below.
+// chart region only) and the full card export (whole layout) — see below.
 function drawShareCard(ctx, layout, trade, chartImg, frame) {
-  const { W, H, pad, heroH, stampW, stampH, stampY, symbolY, symbolH, perfY, statsY, statsH, barcodeY, barcodeH, footerY } = layout;
+  const { W, H, pad, headerY, headerH, statsY, statsH, chartY, chartH, quoteY, quoteH, taglineY } = layout;
   const pnlColor = trade.outcome === "BE" ? "#f5a623" : trade.pnl >= 0 ? "#32D18D" : "#ff4466";
   const isLong = /long|buy/i.test(trade.direction || "");
   const dirColor = isLong ? "#32D18D" : "#4488ff";
-  const stubBg = "#0c1220";
+  const outcomeIcon = trade.outcome === "Win" ? "outcome-win" : trade.outcome === "Loss" ? "outcome-loss" : "outcome-be";
+  const bg = "#080b14";
 
-  // Base
-  ctx.fillStyle = stubBg; ctx.fillRect(0, 0, W, H);
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  const glow = ctx.createRadialGradient(60, 20, 0, 60, 20, 420);
+  glow.addColorStop(0, pnlColor + "1c"); glow.addColorStop(1, "transparent");
+  ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
 
-  // ── Hero: full-bleed chart with a dark fade into the ticket stub ──────────
-  ctx.save(); ctx.beginPath(); ctx.rect(0, 0, W, heroH); ctx.clip();
-  if (chartImg) drawShareChartCrop(ctx, chartImg, 0, 0, W, heroH, frame.zoom, frame.offsetX, frame.offsetY);
-  else { ctx.fillStyle = "#151b2c"; ctx.fillRect(0, 0, W, heroH); }
-  const fade = ctx.createLinearGradient(0, 0, 0, heroH);
-  fade.addColorStop(0, "#00000060"); fade.addColorStop(0.5, "#00000000"); fade.addColorStop(1, stubBg);
-  ctx.fillStyle = fade; ctx.fillRect(0, 0, W, heroH);
-  ctx.restore();
+  // ── Header ──────────────────────────────────────────────────────────────
+  ctx.fillStyle = "#32D18D"; roundRectPath(ctx, pad, headerY, 64, 64, 16); ctx.fill();
+  ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#04140d"; ctx.font = "24px Inter, sans-serif";
+  ctx.fillText("♠", pad + 32, headerY + 32);
+  ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = "#f2f4f9"; ctx.font = "800 25px Inter, sans-serif";
+  ctx.fillText(SHARE_BRAND, pad + 80, headerY + 28);
+  ctx.fillStyle = "#8a93a8"; ctx.font = "500 17px Inter, sans-serif";
+  ctx.fillText(fmtDate(trade.date), pad + 80, headerY + 54);
 
-  // Direction chip — top-left, floating on the hero
-  ctx.font = "800 16px Inter, sans-serif";
-  const dirLabel = (trade.direction || "—").toUpperCase();
-  const dirTextW = ctx.measureText(dirLabel).width;
-  const dirChipW = dirTextW + 58, dirChipX = 32, dirChipY = 32, dirChipH = 42;
-  ctx.fillStyle = "#00000070"; roundRectPath(ctx, dirChipX, dirChipY, dirChipW, dirChipH, 21); ctx.fill();
-  ctx.strokeStyle = dirColor + "80"; ctx.lineWidth = 1.5; roundRectPath(ctx, dirChipX, dirChipY, dirChipW, dirChipH, 21); ctx.stroke();
-  ctx.fillStyle = dirColor; ctx.font = "700 18px Inter, sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-  ctx.fillText(isLong ? "▲" : "▼", dirChipX + 16, dirChipY + dirChipH / 2 + 1);
-  ctx.fillStyle = "#f2f4f9"; ctx.font = "800 16px Inter, sans-serif";
-  ctx.fillText(dirLabel, dirChipX + 38, dirChipY + dirChipH / 2 + 1);
+  // ── Stats block ─────────────────────────────────────────────────────────
+  // corner brackets
+  ctx.strokeStyle = "#32D18D80"; ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(pad - 8, statsY + 16); ctx.lineTo(pad - 8, statsY - 8); ctx.lineTo(pad + 16, statsY - 8); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(W - pad - 16, statsY - 8); ctx.lineTo(W - pad + 8, statsY - 8); ctx.lineTo(W - pad + 8, statsY + 16); ctx.stroke();
 
-  // Brand chip — top-right, floating on the hero
-  ctx.font = "800 18px Inter, sans-serif";
-  const brandTextW = ctx.measureText(SHARE_BRAND).width;
-  const brandChipW = brandTextW + 62, brandChipX = W - 32 - brandChipW, brandChipY = 32, brandChipH = 42;
-  ctx.fillStyle = "#00000070"; roundRectPath(ctx, brandChipX, brandChipY, brandChipW, brandChipH, 21); ctx.fill();
-  ctx.strokeStyle = "#ffffff22"; ctx.lineWidth = 1.5; roundRectPath(ctx, brandChipX, brandChipY, brandChipW, brandChipH, 21); ctx.stroke();
-  ctx.fillStyle = "#32D18D"; ctx.font = "18px Inter, sans-serif"; ctx.textAlign = "left";
-  ctx.fillText("♠", brandChipX + 18, brandChipY + brandChipH / 2 + 1);
-  ctx.fillStyle = "#f2f4f9"; ctx.font = "800 15px Inter, sans-serif";
-  ctx.fillText(SHARE_BRAND, brandChipX + 38, brandChipY + brandChipH / 2 + 1);
+  const leftW = (W - pad * 2) * 0.56, dividerX = pad + leftW + 24, rightX = dividerX + 40;
 
-  // ── Wax-seal P&L stamp — straddles the hero/stub seam, slightly rotated ──
-  ctx.save();
-  ctx.translate(W / 2, stampY); ctx.rotate((-4 * Math.PI) / 180);
-  ctx.fillStyle = "#0c1220e8"; roundRectPath(ctx, -stampW / 2, -stampH / 2, stampW, stampH, 18); ctx.fill();
-  ctx.strokeStyle = pnlColor; ctx.lineWidth = 3; roundRectPath(ctx, -stampW / 2, -stampH / 2, stampW, stampH, 18); ctx.stroke();
-  ctx.strokeStyle = pnlColor + "70"; ctx.lineWidth = 1.5; ctx.setLineDash([4, 5]);
-  roundRectPath(ctx, -stampW / 2 + 8, -stampH / 2 + 8, stampW - 16, stampH - 16, 12); ctx.stroke();
-  ctx.setLineDash([]);
-  ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-  ctx.fillStyle = pnlColor + "b0"; ctx.font = "700 13px Inter, sans-serif";
-  ctx.fillText("R E S U L T", 0, -stampH / 2 + 34);
-  ctx.fillStyle = pnlColor; ctx.font = "800 52px Inter, sans-serif";
-  ctx.fillText(fmt$(trade.pnl), 0, stampH / 2 - 26);
-  ctx.restore();
+  ctx.textAlign = "left"; ctx.fillStyle = pnlColor; ctx.font = "700 15px Inter, sans-serif";
+  ctx.fillText("T R A D E   R E S U L T", pad, statsY + 30);
+  ctx.fillStyle = pnlColor; ctx.font = "800 78px Inter, sans-serif";
+  ctx.fillText(fmt$(trade.pnl), pad, statsY + 130);
 
-  // ── Ticket stub ─────────────────────────────────────────────────────────
-  // Symbol (left) + date (right), ticket-manifest style
-  ctx.textBaseline = "alphabetic"; ctx.textAlign = "left"; ctx.fillStyle = "#f2f4f9"; ctx.font = "800 30px Inter, sans-serif";
-  ctx.fillText((trade.symbol || "—").toUpperCase(), pad, symbolY + 26);
-  ctx.textAlign = "right"; ctx.fillStyle = "#8a93a8"; ctx.font = "600 17px Inter, sans-serif";
-  ctx.fillText(fmtDate(trade.date).toUpperCase(), W - pad, symbolY + 26);
+  const tickerY = statsY + 168, tickerH = 60, tickerW = leftW;
+  ctx.strokeStyle = "#ffffff22"; ctx.lineWidth = 1.5; roundRectPath(ctx, pad, tickerY, tickerW, tickerH, 12); ctx.stroke();
+  ctx.fillStyle = "#6b7488"; ctx.font = "700 13px Inter, sans-serif";
+  ctx.fillText("T I C K E R", pad + 20, tickerY + tickerH / 2 - 4);
+  ctx.fillStyle = "#eef0f5"; ctx.font = "800 22px Inter, sans-serif";
+  ctx.fillText((trade.symbol || "—").toUpperCase(), pad + 20, tickerY + tickerH / 2 + 18);
 
-  // Perforation — true punched holes at the edges + a dashed tear line
-  ctx.save(); ctx.globalCompositeOperation = "destination-out";
-  ctx.beginPath(); ctx.arc(0, perfY, 18, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(W, perfY, 18, 0, Math.PI * 2); ctx.fill();
-  ctx.restore();
-  ctx.strokeStyle = "#ffffff30"; ctx.lineWidth = 2; ctx.setLineDash([9, 8]);
-  ctx.beginPath(); ctx.moveTo(pad * 0.4, perfY); ctx.lineTo(W - pad * 0.4, perfY); ctx.stroke();
-  ctx.setLineDash([]);
+  ctx.strokeStyle = "#ffffff1c"; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(dividerX, statsY + 6); ctx.lineTo(dividerX, statsY + statsH - 6); ctx.stroke();
 
-  // 2×2 field grid — SESSION / SETUP / (PIPS or SIZE) / OUTCOME
   const pipsKnown = trade.pips !== undefined && trade.pips !== null && trade.pips !== "";
-  const thirdField = pipsKnown ? ["PIPS", `${trade.pips > 0 ? "+" : ""}${trade.pips}`] : ["SIZE", `${trade.size || "—"} lot${trade.size > 1 ? "s" : ""}`];
-  const fields = [["SESSION", trade.session], ["SETUP", trade.setup], thirdField, ["OUTCOME", trade.outcome]];
-  const gGap = 24, gW = (W - pad * 2 - gGap) / 2, gH = (statsH - gGap) / 2;
-  fields.forEach(([label, value], i) => {
-    const col = i % 2, row = Math.floor(i / 2);
-    const fx = pad + col * (gW + gGap), fy = statsY + row * (gH + gGap);
-    ctx.fillStyle = i % 3 === 2 ? pnlColor : dirColor; // subtle accent tick, alternating
-    ctx.fillRect(fx, fy + 4, 4, gH - 8);
+  const rows = [
+    ["direction-" + (isLong ? "long" : "short"), dirColor, "DIRECTION", (trade.direction || "—").toUpperCase()],
+    ["session", "#c9a9ff", "SESSION", (trade.session || "—").toUpperCase()],
+    ["setup", "#f5a623", "SETUP", trade.setup || "—"],
+    [outcomeIcon, pnlColor, "OUTCOME", (trade.outcome || "—").toUpperCase() + (pipsKnown ? `  (${trade.pips > 0 ? "+" : ""}${trade.pips}p)` : "")],
+  ];
+  const rowH = statsH / 4;
+  rows.forEach(([icon, color, label, value], i) => {
+    const ry = statsY + rowH * i + rowH / 2;
+    ctx.fillStyle = color + "1a"; ctx.beginPath(); ctx.arc(rightX + 22, ry, 22, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = color + "55"; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(rightX + 22, ry, 22, 0, Math.PI * 2); ctx.stroke();
+    drawStatIcon(ctx, rightX + 22, ry, 22, icon, color);
     ctx.textAlign = "left"; ctx.fillStyle = "#6b7488"; ctx.font = "700 13px Inter, sans-serif";
-    ctx.fillText(label, fx + 18, fy + 26);
-    ctx.fillStyle = "#eef0f5"; ctx.font = "700 24px Inter, sans-serif";
-    let val = String(value || "—");
-    while (ctx.measureText(val).width > gW - 24 && val.length > 3) val = val.slice(0, -2) + "…";
-    ctx.fillText(val, fx + 18, fy + 58);
+    ctx.fillText(label, rightX + 58, ry - 8);
+    ctx.fillStyle = "#eef0f5"; ctx.font = "800 20px Inter, sans-serif";
+    let val = String(value);
+    while (ctx.measureText(val).width > W - pad - (rightX + 58) && val.length > 3) val = val.slice(0, -2) + "…";
+    ctx.fillText(val, rightX + 58, ry + 18);
   });
 
-  // Decorative barcode + pseudo ticket number (seeded off the trade id — not scannable, just texture)
-  const rng = seededRng(trade.id || trade.symbol || "ticket");
-  let bx = pad;
-  const barTop = barcodeY, barBottom = barcodeY + barcodeH - 20;
-  ctx.fillStyle = "#ffffff45";
-  while (bx < W - pad - 4) {
-    const bw = 2 + Math.round(rng() * 4);
-    const tall = rng() > 0.3;
-    ctx.fillRect(bx, barTop, bw, tall ? barBottom - barTop : (barBottom - barTop) * 0.6);
-    bx += bw + 3 + Math.round(rng() * 5);
-  }
-  const ticketNo = `TCKT·${String(trade.id || "").replace(/[^A-Za-z0-9]/g, "").slice(-8).toUpperCase() || "000000"}`;
-  ctx.textAlign = "left"; ctx.fillStyle = "#4b5266"; ctx.font = "600 13px Inter, sans-serif";
-  ctx.fillText(ticketNo, pad, barcodeY + barcodeH + 2);
+  // ── Chart ───────────────────────────────────────────────────────────────
+  roundRectPath(ctx, pad, chartY, W - pad * 2, chartH, 18);
+  ctx.save(); ctx.clip();
+  if (chartImg) drawShareChartCrop(ctx, chartImg, pad, chartY, W - pad * 2, chartH, frame.zoom, frame.offsetX, frame.offsetY);
+  else { ctx.fillStyle = "#151b2c"; ctx.fillRect(pad, chartY, W - pad * 2, chartH); }
+  ctx.restore();
+  ctx.strokeStyle = "#ffffff1c"; ctx.lineWidth = 1.5;
+  roundRectPath(ctx, pad, chartY, W - pad * 2, chartH, 18); ctx.stroke();
 
-  // Footer
-  ctx.strokeStyle = "#ffffff14"; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.moveTo(pad, footerY - 8); ctx.lineTo(W - pad, footerY - 8); ctx.stroke();
-  ctx.textAlign = "center"; ctx.fillStyle = "#8a93a8"; ctx.font = "700 17px Inter, sans-serif";
-  ctx.fillText(SHARE_BRAND, W / 2, footerY + 18);
-  ctx.fillStyle = "#4b5266"; ctx.font = "500 13px Inter, sans-serif";
-  ctx.fillText("One Trade Never Makes A Trader", W / 2, footerY + 40);
+  // ── Daily mindset quote ─────────────────────────────────────────────────
+  ctx.fillStyle = "#ffffff08"; roundRectPath(ctx, pad, quoteY, W - pad * 2, quoteH, 18); ctx.fill();
+  ctx.strokeStyle = "#ffffff14"; ctx.lineWidth = 1; roundRectPath(ctx, pad, quoteY, W - pad * 2, quoteH, 18); ctx.stroke();
+  // giant faint decorative quote mark
+  ctx.textAlign = "right"; ctx.fillStyle = "#32D18D14"; ctx.font = "800 150px Georgia, serif";
+  ctx.fillText("”", W - pad - 20, quoteY + 130);
+
+  const iconCx = pad + 46, iconCy = quoteY + 46;
+  ctx.fillStyle = "#32D18D1a"; ctx.beginPath(); ctx.arc(iconCx, iconCy, 26, 0, Math.PI * 2); ctx.fill();
+  drawTargetIcon(ctx, iconCx, iconCy, 15, "#32D18D");
+  ctx.textAlign = "left"; ctx.fillStyle = "#32D18D"; ctx.font = "700 14px Inter, sans-serif";
+  ctx.fillText("D A I L Y   M I N D S E T", pad + 88, quoteY + 40);
+
+  ctx.font = "italic 600 22px Inter, sans-serif"; ctx.fillStyle = "#d7dae4";
+  const quote = "“" + dailyQuote(new Date(trade.date || Date.now())) + "”";
+  const lines = wrapCanvasText(ctx, quote, W - pad * 2 - 88 - 40);
+  lines.slice(0, 3).forEach((ln, i) => ctx.fillText(ln, pad + 88, quoteY + 78 + i * 30));
+
+  // Bottom tagline
+  ctx.fillStyle = "#4b5266"; ctx.font = "600 14px Inter, sans-serif";
+  ctx.fillText("O N E   T R A D E   N E V E R   M A K E S   A   T R A D E R", W / 2, taglineY);
 }
 
 async function renderShareCardPNG(trade, screenshotUrl, frame) {
-
   if (document.fonts?.ready) { try { await document.fonts.ready; } catch {} }
   const layout = shareCardLayout(frame.aspect);
   const canvas = document.createElement("canvas");
@@ -2311,7 +2370,7 @@ function FrameChartModal({ trade, onCancel, onConfirm }) {
 
   const PREVIEW_W = 452;
   const layout = shareCardLayout(aspect);
-  const previewH = Math.round(layout.heroH * (PREVIEW_W / layout.W));
+  const previewH = Math.round(layout.chartH * (PREVIEW_W / (layout.W - layout.pad * 2)));
 
   useEffect(() => {
     const canvas = canvasRef.current;
