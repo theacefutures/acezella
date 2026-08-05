@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useRef, useEffect } from "react";
 import { supabase } from "./supabaseClient";
 import { loadCloudState, saveCloudState, flushCloudStateSync, getLocalCache, getSnapshots, hasRealData, onSyncStatusChange } from "./lib/cloudSync";
+import logoUrl from "./logo.png";
 
 // ─── THEME ───────────────────────────────────────────────────────────────────
 // C is intentionally a single mutable object — every component reads C.xxx at
@@ -344,7 +345,7 @@ function UpgradeModal({ state, dispatch }) {
         </div>
         {plus ? (
           <>
-            <div style={{ background: C.accentDim, border: `1px solid ${C.accent}44`, borderRadius: 10, padding: "12px 14px", fontSize: 13, color: C.accent, marginBottom: 12 }}>✓ You're already on AcePlus. Thanks for supporting ACEZELLA!</div>
+            <div style={{ background: C.accentDim, border: `1px solid ${C.accent}44`, borderRadius: 10, padding: "12px 14px", fontSize: 13, color: C.accent, marginBottom: 12 }}>✓ You're already on AcePlus. Thanks for supporting THE ACE LOUNGE!</div>
             <Btn variant="ghost" onClick={() => dispatch({ type: "SET_PLAN", plan: "free" })} style={{ width: "100%", justifyContent: "center" }}>Downgrade to Ace Basic</Btn>
           </>
         ) : (
@@ -550,7 +551,7 @@ function defaultState() {
     currentUser: null, modal: null, activeAccount: "all",
     trades: [],
     accounts: [
-      { id: "acc1", name: "ACEZELLA", type: "Funded", color: C.accent },
+      { id: "acc1", name: "THE ACE LOUNGE", type: "Funded", color: C.accent },
     ],
     strategies: [
       { id: "s1", name: "Celery", color: C.accent, description: "Breakout with an additional confirmation candlestick", rules: ["Confirm bias on higher TF", "Wait for confirmation candle", "Enter on retest"] },
@@ -582,7 +583,7 @@ function defaultState() {
       { id: "fp5", firmId: "pf4", gross: 950, splitPct: 65, date: "2025-12-01", certificateUrl: "", notes: "December payout" },
       { id: "fp6", firmId: "pf1", gross: 1800, splitPct: 80, date: "2026-01-28", certificateUrl: "", notes: "January payout - best month yet" },
     ],
-    siteName: "ACEZELLA",
+    siteName: "THE ACE LOUNGE",
     pnlDisplayMode: "money", // "money" | "percent" — global $ / % toggle for trade-level P&L displays
     plan: "free", // "free" (Ace Basic) | "plus" (AcePlus $10/mo)
     theme: { name: "Original", mode: "night" },
@@ -659,7 +660,7 @@ const REFERENCE_LISTS_SCHEMA_VERSION = 4;
 
 // Bump this whenever the *default* accounts list changes, so returning users
 // still sitting on the old two-account "Pipstone 100K Funded / Pipstone BOGO"
-// demo default get migrated onto the single "ACEZELLA" account automatically.
+// demo default get migrated onto the single "THE ACE LOUNGE" account automatically.
 // Any trades logged against the old second account ("acc2") are remapped
 // onto "acc1" so nothing gets silently hidden or deleted.
 const ACCOUNTS_SCHEMA_VERSION = 2;
@@ -1098,7 +1099,8 @@ function AuthScreen({ state, dispatch }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ width: "100%", maxWidth: 440 }} className="fade-in">
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: -2, fontFamily: "'Inter', sans-serif", ...gradientTextStyle() }}>{state.siteName || "ACEZELLA"}</div>
+          <img src={logoUrl} alt="" style={{ width: 64, height: 64, borderRadius: 16, marginBottom: 14, objectFit: "cover" }} />
+          <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: -2, fontFamily: "'Inter', sans-serif", ...gradientTextStyle() }}>{state.siteName || "THE ACE LOUNGE"}</div>
           <div style={{ fontSize: 11, color: C.textMuted, letterSpacing: 4, textTransform: "uppercase", marginTop: 4 }}>Trading Journal</div>
         </div>
         <Card style={{ padding: 32 }}>
@@ -1363,9 +1365,12 @@ function Sidebar({ page, setPage, state, dispatch, mobileNavOpen, onClose }) {
       {mobileNavOpen && <div className="sidebar-scrim" onClick={onClose} />}
       <div className={`app-sidebar${mobileNavOpen ? " open" : ""}`} style={{ width: 224, minWidth: 224, background: C.sidebar, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", height: "100%" }}>
         <div style={{ padding: "18px 16px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div>
-            <div style={{ fontSize: 19, fontWeight: 800, fontFamily: "'Inter', sans-serif", letterSpacing: -1, ...gradientTextStyle() }}>{state.siteName || "ACEZELLA"}</div>
-            <div style={{ fontSize: 9, color: C.accent, letterSpacing: 3, textTransform: "uppercase", marginTop: 2, opacity: 0.85 }}>Trading Journal</div>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
+            <img src={logoUrl} alt="" style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, objectFit: "cover" }} />
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 19, fontWeight: 800, fontFamily: "'Inter', sans-serif", letterSpacing: -1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", ...gradientTextStyle() }}>{state.siteName || "THE ACE LOUNGE"}</div>
+              <div style={{ fontSize: 9, color: C.accent, letterSpacing: 3, textTransform: "uppercase", marginTop: 2, opacity: 0.85 }}>Trading Journal</div>
+            </div>
           </div>
           <button onClick={onClose} className="sidebar-close-btn" style={{ background: "none", border: "none", color: C.textMuted, fontSize: 22, cursor: "pointer", display: "none" }}>×</button>
         </div>
@@ -2236,7 +2241,7 @@ function drawShareChartCrop(ctx, img, x, y, w, h, zoom, offsetXFrac, offsetYFrac
 
 // Core draw routine, shared by the live chart-crop preview (small canvas,
 // chart region only) and the full card export (whole layout) — see below.
-function drawShareCard(ctx, layout, trade, chartImg, frame) {
+function drawShareCard(ctx, layout, trade, chartImg, frame, logoImg) {
   const { W, H, pad, headerY, headerH, statsY, statsH, chartY, chartH, quoteY, quoteH, taglineY } = layout;
   const pnlColor = trade.outcome === "BE" ? "#f5a623" : trade.pnl >= 0 ? "#32D18D" : "#ff4466";
   const isLong = /long|buy/i.test(trade.direction || "");
@@ -2250,9 +2255,15 @@ function drawShareCard(ctx, layout, trade, chartImg, frame) {
   ctx.fillStyle = glow; ctx.fillRect(0, 0, W, H);
 
   // ── Header ──────────────────────────────────────────────────────────────
-  ctx.fillStyle = "#32D18D"; roundRectPath(ctx, pad, headerY, 64, 64, 16); ctx.fill();
-  ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#04140d"; ctx.font = "24px Inter, sans-serif";
-  ctx.fillText("♠", pad + 32, headerY + 32);
+  if (logoImg) {
+    ctx.save(); roundRectPath(ctx, pad, headerY, 64, 64, 16); ctx.clip();
+    drawShareChartCrop(ctx, logoImg, pad, headerY, 64, 64, 1, 0, 0);
+    ctx.restore();
+  } else {
+    ctx.fillStyle = "#32D18D"; roundRectPath(ctx, pad, headerY, 64, 64, 16); ctx.fill();
+    ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillStyle = "#04140d"; ctx.font = "24px Inter, sans-serif";
+    ctx.fillText("♠", pad + 32, headerY + 32);
+  }
   ctx.textAlign = "left"; ctx.textBaseline = "alphabetic"; ctx.fillStyle = "#f2f4f9"; ctx.font = "800 25px Inter, sans-serif";
   ctx.fillText(SHARE_BRAND, pad + 80, headerY + 28);
   ctx.fillStyle = "#8a93a8"; ctx.font = "500 17px Inter, sans-serif";
@@ -2342,7 +2353,9 @@ async function renderShareCardPNG(trade, screenshotUrl, frame) {
   const ctx = canvas.getContext("2d");
   let img = null;
   if (screenshotUrl) { try { img = await loadImageFromURL(screenshotUrl); } catch { img = null; } }
-  drawShareCard(ctx, layout, trade, img, frame);
+  let logoImg = null;
+  try { logoImg = await loadImageFromURL(logoUrl); } catch { logoImg = null; }
+  drawShareCard(ctx, layout, trade, img, frame, logoImg);
   return new Promise(resolve => canvas.toBlob(resolve, "image/png"));
 }
 
@@ -2702,7 +2715,8 @@ function PublicTradeView({ id }) {
     <div style={{ minHeight: "100vh", background: C.bg, padding: 28, maxWidth: 680, margin: "0 auto" }}>
       {lightboxIndex !== null && <ImageLightbox images={shotUrls} labels={shotLabels} index={lightboxIndex} onClose={() => setLightboxIndex(null)} onNavigate={setLightboxIndex} />}
       <div style={{ textAlign: "center", marginBottom: 28 }}>
-        <div style={{ fontSize: 22, fontWeight: 800, color: C.accent, fontFamily: "'Inter', sans-serif" }}>ACEZELLA</div>
+        <img src={logoUrl} alt="" style={{ width: 44, height: 44, borderRadius: 12, marginBottom: 8, objectFit: "cover" }} />
+        <div style={{ fontSize: 22, fontWeight: 800, color: C.accent, fontFamily: "'Inter', sans-serif" }}>THE ACE LOUNGE</div>
         <div style={{ fontSize: 11, color: C.textMuted, letterSpacing: 3, textTransform: "uppercase" }}>Shared Trade</div>
       </div>
       <Card style={{ marginBottom: 16 }}>
@@ -2742,7 +2756,7 @@ function PublicTradeView({ id }) {
           </div>
         </Card>
       )}
-      <div style={{ textAlign: "center", marginTop: 24, fontSize: 12, color: C.textDim }}>Shared via ACEZELLA Trading Journal</div>
+      <div style={{ textAlign: "center", marginTop: 24, fontSize: 12, color: C.textDim }}>Shared via THE ACE LOUNGE Trading Journal</div>
     </div>
   );
 }
@@ -7422,7 +7436,7 @@ function LiveCapitalSetup({ state, dispatch }) {
           <Sel label="Day of month" value={contrib.day} onChange={v => saveContrib({ ...contrib, day: parseInt(v) })} options={dayOptions} />
           <Inp label="Start date" type="date" value={contrib.startDate} onChange={v => saveContrib({ ...contrib, startDate: v })} />
         </div>
-        <AutoToggle on={contrib.autoAdd} onClick={() => saveContrib({ ...contrib, autoAdd: !contrib.autoAdd })} label="Automatically add this contribution" hint="When enabled, ACEZELLA will create and manage the deposit plan from these settings." />
+        <AutoToggle on={contrib.autoAdd} onClick={() => saveContrib({ ...contrib, autoAdd: !contrib.autoAdd })} label="Automatically add this contribution" hint="When enabled, THE ACE LOUNGE will create and manage the deposit plan from these settings." />
         <div style={{ background: C.bg, borderRadius: 10, padding: 16 }}>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}><Badge color={C.accent}>Deposit</Badge><Badge color={C.blue}>Auto-add</Badge></div>
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Deposit plan</div>
@@ -7439,7 +7453,7 @@ function LiveCapitalSetup({ state, dispatch }) {
           <Sel label="Day of month" value={withdraw.day} onChange={v => saveWithdraw({ ...withdraw, day: parseInt(v) })} options={dayOptions} />
           <Inp label="Start date" type="date" value={withdraw.startDate} onChange={v => saveWithdraw({ ...withdraw, startDate: v })} />
         </div>
-        <AutoToggle on={withdraw.autoAdd} onClick={() => saveWithdraw({ ...withdraw, autoAdd: !withdraw.autoAdd })} label="Automatically add this withdrawal" hint="When enabled, ACEZELLA will create and manage the withdrawal plan from these settings." />
+        <AutoToggle on={withdraw.autoAdd} onClick={() => saveWithdraw({ ...withdraw, autoAdd: !withdraw.autoAdd })} label="Automatically add this withdrawal" hint="When enabled, THE ACE LOUNGE will create and manage the withdrawal plan from these settings." />
         <div style={{ background: C.bg, borderRadius: 10, padding: 16 }}>
           <div style={{ display: "flex", gap: 8, marginBottom: 8 }}><Badge color={C.purple}>Withdrawal</Badge><Badge color={C.blue}>Auto-add</Badge></div>
           <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 4 }}>Withdrawal plan</div>
@@ -7697,7 +7711,7 @@ function Settings({ state, dispatch }) {
   const [editingAccId, setEditingAccId] = useState(null);
   const [editAccName, setEditAccName] = useState(""), [editAccType, setEditAccType] = useState("Funded"), [editAccColor, setEditAccColor] = useState(ACCOUNT_COLORS[0]);
   const [newSession, setNewSession] = useState(""), [newEmotion, setNewEmotion] = useState("");
-  const [siteNameInput, setSiteNameInput] = useState(state.siteName || "ACEZELLA");
+  const [siteNameInput, setSiteNameInput] = useState(state.siteName || "THE ACE LOUNGE");
   const [clearAllConfirm, setClearAllConfirm] = useState(false);
   const [deleteConfirmId, setDeleteConfirmId] = useState(null);
   const [toast, setToast] = useState("");
@@ -7742,7 +7756,7 @@ function Settings({ state, dispatch }) {
     dispatch({ type: "SET_THEME", theme: { name } });
   };
   const setThemeMode = (mode) => dispatch({ type: "SET_THEME", theme: { mode } });
-  const saveSiteName = () => { if (!isPlus(state)) { dispatch({ type: "OPEN_MODAL", modal: "upgrade" }); return; } dispatch({ type: "SET_SITE_NAME", name: siteNameInput.trim() || "ACEZELLA" }); };
+  const saveSiteName = () => { if (!isPlus(state)) { dispatch({ type: "OPEN_MODAL", modal: "upgrade" }); return; } dispatch({ type: "SET_SITE_NAME", name: siteNameInput.trim() || "THE ACE LOUNGE" }); };
   const handleWatermarkUpload = (file) => {
     if (!file) return;
     if (!isPlus(state)) { dispatch({ type: "OPEN_MODAL", modal: "upgrade" }); return; }
@@ -7765,15 +7779,25 @@ function Settings({ state, dispatch }) {
     }).join(","));
     const csv = [headers.join(","), ...rows].join("\n");
     const blob = new Blob([csv], { type: "text/csv" });
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "acezella_trades.csv"; a.click();
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "the_ace_lounge_trades.csv"; a.click();
   };
 
-  const exportHTML = () => {
+  const exportHTML = async () => {
     const stats = calcStats(state.trades);
     const rows = state.trades.map(t => `<tr><td>${fmtDate(t.date)}</td><td>${t.symbol}</td><td>${t.direction}</td><td style="color:${outcomeColor(t.outcome, t.pnl)}">${t.outcome}</td><td>${fmt$(t.pnl)}</td><td>${t.pips >= 0 ? "+" : ""}${t.pips}</td><td>${t.setup || ""}</td><td>${t.session}</td><td>${t.mood}</td></tr>`).join("");
-    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>ACEZELLA — Trade Report</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');body{font-family:'Inter',sans-serif;background:#020617;color:#e8eaf0;padding:32px}h1{color:#32D18D}table{width:100%;border-collapse:collapse;margin-top:24px}th{background:#1e293b;padding:10px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:1px}td{padding:10px;border-bottom:1px solid #1e293b;font-size:13px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:24px 0}.stat{background:#0F172A;border:1px solid #1e293b;border-radius:12px;padding:16px}.stat-label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}.stat-value{font-size:24px;font-weight:700;color:#32D18D;font-family:'Inter',sans-serif}</style></head><body><h1>ACEZELLA — Trade Report</h1><p style="color:#94a3b8">Generated ${new Date().toLocaleString()}</p><div class="stats"><div class="stat"><div class="stat-label">Net P&L</div><div class="stat-value">${fmt$(stats.netPnl)}</div></div><div class="stat"><div class="stat-label">Win Rate</div><div class="stat-value">${stats.winRate.toFixed(1)}%</div></div><div class="stat"><div class="stat-label">Total Pips</div><div class="stat-value">${stats.totalPips >= 0 ? "+" : ""}${stats.totalPips.toFixed(1)}</div></div><div class="stat"><div class="stat-label">Trades</div><div class="stat-value">${state.trades.length}</div></div></div><table><thead><tr><th>Date</th><th>Symbol</th><th>Direction</th><th>Outcome</th><th>P&L</th><th>Pips</th><th>Setup</th><th>Session</th><th>Mood</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
+    // Embed the logo as a data URI so it still shows once this file is
+    // downloaded and opened standalone (a plain site-relative <img src>
+    // wouldn't resolve outside the app).
+    let logoDataUrl = "";
+    try {
+      const res = await fetch(logoUrl);
+      const blob = await res.blob();
+      logoDataUrl = await new Promise(resolve => { const r = new FileReader(); r.onload = () => resolve(r.result); r.readAsDataURL(blob); });
+    } catch {}
+    const logoImgTag = logoDataUrl ? `<img src="${logoDataUrl}" alt="" style="width:40px;height:40px;border-radius:10px;vertical-align:middle;margin-right:12px;object-fit:cover" />` : "";
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>THE ACE LOUNGE — Trade Report</title><style>@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');body{font-family:'Inter',sans-serif;background:#020617;color:#e8eaf0;padding:32px}h1{color:#32D18D;display:flex;align-items:center}table{width:100%;border-collapse:collapse;margin-top:24px}th{background:#1e293b;padding:10px;text-align:left;font-size:12px;text-transform:uppercase;letter-spacing:1px}td{padding:10px;border-bottom:1px solid #1e293b;font-size:13px}.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin:24px 0}.stat{background:#0F172A;border:1px solid #1e293b;border-radius:12px;padding:16px}.stat-label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:6px}.stat-value{font-size:24px;font-weight:700;color:#32D18D;font-family:'Inter',sans-serif}</style></head><body><h1>${logoImgTag}THE ACE LOUNGE — Trade Report</h1><p style="color:#94a3b8">Generated ${new Date().toLocaleString()}</p><div class="stats"><div class="stat"><div class="stat-label">Net P&L</div><div class="stat-value">${fmt$(stats.netPnl)}</div></div><div class="stat"><div class="stat-label">Win Rate</div><div class="stat-value">${stats.winRate.toFixed(1)}%</div></div><div class="stat"><div class="stat-label">Total Pips</div><div class="stat-value">${stats.totalPips >= 0 ? "+" : ""}${stats.totalPips.toFixed(1)}</div></div><div class="stat"><div class="stat-label">Trades</div><div class="stat-value">${state.trades.length}</div></div></div><table><thead><tr><th>Date</th><th>Symbol</th><th>Direction</th><th>Outcome</th><th>P&L</th><th>Pips</th><th>Setup</th><th>Session</th><th>Mood</th></tr></thead><tbody>${rows}</tbody></table></body></html>`;
     const blob = new Blob([html], { type: "text/html" });
-    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "acezella_report.html"; a.click();
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = "the_ace_lounge_report.html"; a.click();
   };
 
   const importJSON = (file) => {
@@ -7958,13 +7982,13 @@ function Settings({ state, dispatch }) {
         {isPlus(state) ? (
           <>
             <div style={{ display: "flex", gap: 10, maxWidth: 460 }}>
-              <Inp value={siteNameInput} onChange={setSiteNameInput} placeholder="ACEZELLA" style={{ flex: 1 }} />
+              <Inp value={siteNameInput} onChange={setSiteNameInput} placeholder="THE ACE LOUNGE" style={{ flex: 1 }} />
               <Btn onClick={saveSiteName}>Save</Btn>
             </div>
             <div style={{ fontSize: 12, color: C.textDim, marginTop: 8 }}>Shown in the sidebar and on the sign-in screen.</div>
           </>
         ) : (
-          <InlineUpgradeLock dispatch={dispatch} text={`Renaming the app from "${state.siteName || "ACEZELLA"}" is an AcePlus feature.`} />
+          <InlineUpgradeLock dispatch={dispatch} text={`Renaming the app from "${state.siteName || "THE ACE LOUNGE"}" is an AcePlus feature.`} />
         )}
       </Card>
 
