@@ -1270,7 +1270,7 @@ function ritualInsight(state) {
   }
   return { headline: "Trade what's in front of you", detail: "Not what you wish was there. Wait for your setup." };
 }
-function SessionRitual({ state, dispatch, onDone, onClose }) {
+function RitualFlow({ state, dispatch, onDone }) {
   const [step, setStep] = useState(0);
   const insight = useMemo(() => ritualInsight(state), []);
   const [intention, setIntention] = useState(insight.headline);
@@ -1279,7 +1279,7 @@ function SessionRitual({ state, dispatch, onDone, onClose }) {
 
   const finish = (skipped = false) => {
     dispatch({ type: "COMPLETE_RITUAL", key: ritualKeyFor(new Date()), intention, skipped });
-    onDone();
+    onDone && onDone();
   };
 
   const arriveTime = useRitualCountdown(60, step === 0, () => setStep(1));
@@ -1287,10 +1287,8 @@ function SessionRitual({ state, dispatch, onDone, onClose }) {
   const breathScale = [1, 1, 0.62, 0.62][breath.phaseIdx];
 
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 200, background: `${C.bg}f2`, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
-      <button onClick={onClose} aria-label="Close" style={{ position: "absolute", top: 18, right: 22, background: "none", border: "none", color: C.textMuted, fontSize: 26, cursor: "pointer", lineHeight: 1 }}>×</button>
-      <div className="fade-in" onClick={e => e.stopPropagation()} style={{ width: "100%", maxWidth: 520, textAlign: "center" }} key={step}>
-        <RitualTabs step={step} />
+    <div className="fade-in" style={{ width: "100%", maxWidth: 520, margin: "0 auto", textAlign: "center" }} key={step}>
+      <RitualTabs step={step} />
 
         {step === 0 && (
           <>
@@ -1369,6 +1367,39 @@ function SessionRitual({ state, dispatch, onDone, onClose }) {
             </label>
             <Btn onClick={() => finish(false)} disabled={!agreed} style={{ marginTop: 22, width: "100%", justifyContent: "center" }}>Start the session</Btn>
           </>
+        )}
+    </div>
+  );
+}
+
+// Full page (Sidebar → "Preparation") that hosts the ritual. Can be run any
+// time, as many times as wanted — not gated to a single pass per session.
+// Once completed for the current main session it shows a short confirmation
+// with a "Do it again" option instead of re-showing the flow automatically.
+function PreparationPage({ state, dispatch }) {
+  const ritualKey = ritualKeyFor(new Date());
+  const log = state.ritualLog?.[ritualKey];
+  const [redoTick, setRedoTick] = useState(0);
+  const [forceOpen, setForceOpen] = useState(false);
+  const showFlow = !log || forceOpen;
+  return (
+    <div style={{ height: "100%", overflowY: "auto", padding: "32px 20px" }}>
+      <div style={{ maxWidth: 640, margin: "0 auto" }}>
+        <div style={{ textAlign: "center", marginBottom: 34 }}>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>Pre-Session Preparation</div>
+          <div style={{ fontSize: 13, color: C.textMuted, marginTop: 6, lineHeight: 1.6, maxWidth: 460, marginLeft: "auto", marginRight: "auto" }}>
+            A short Arrive → Breathe → Your Lean → Commit check-in. Run it before any session, as many times as you want.
+          </div>
+        </div>
+        {showFlow ? (
+          <RitualFlow key={redoTick} state={state} dispatch={dispatch} onDone={() => setForceOpen(false)} />
+        ) : (
+          <div style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>✅</div>
+            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 8 }}>You're set for the {mainSessionFor(new Date())} session.</div>
+            {log?.intention && <div style={{ fontSize: 14, color: C.accent, fontWeight: 600, marginBottom: 16 }}>"{log.intention}"</div>}
+            <Btn variant="ghost" onClick={() => { setRedoTick(t => t + 1); setForceOpen(true); }}>Do it again</Btn>
+          </div>
         )}
       </div>
     </div>
@@ -1578,10 +1609,11 @@ function TopHeader({ state, dispatch, setPage, page, syncStatus }) {
 }
 
 // ─── SIDEBAR ──────────────────────────────────────────────────────────────────
-const NAV = [{ id: "dashboard", icon: "♤", label: "Dashboard" }, { id: "journal", icon: "♤", label: "Trades" }, { id: "strategies", icon: "♤", label: "Playbook" }, { id: "analytics", icon: "♤", label: "Analytics", plus: true }, { id: "myrecord", icon: "♤", label: "My Record", plus: true }, { id: "mynotes", icon: "♤", label: "My Notes", plus: true }, { id: "emotions", icon: "♤", label: "Edge Score", plus: true }, { id: "finances", icon: "♤", label: "Prop Firms", plus: true }, { id: "livecapital", icon: "♤", label: "Live Capital", plus: true }];
+const NAV = [{ id: "dashboard", icon: "♤", label: "Dashboard" }, { id: "journal", icon: "♤", label: "Trades" }, { id: "preparation", icon: "🧘", label: "Preparation" }, { id: "strategies", icon: "♤", label: "Playbook" }, { id: "analytics", icon: "♤", label: "Analytics", plus: true }, { id: "myrecord", icon: "♤", label: "My Record", plus: true }, { id: "mynotes", icon: "♤", label: "My Notes", plus: true }, { id: "emotions", icon: "♤", label: "Edge Score", plus: true }, { id: "finances", icon: "♤", label: "Prop Firms", plus: true }, { id: "livecapital", icon: "♤", label: "Live Capital", plus: true }];
 
 function Sidebar({ page, setPage, state, dispatch, mobileNavOpen, onClose }) {
   const ritualDue = state.ritual?.enabled !== false && !state.ritualLog?.[ritualKeyFor(new Date())];
+  const navItems = NAV.filter(n => n.id !== "preparation" || state.ritual?.enabled !== false);
   return (
     <>
       {mobileNavOpen && <div className="sidebar-scrim" onClick={onClose} />}
@@ -1594,26 +1626,15 @@ function Sidebar({ page, setPage, state, dispatch, mobileNavOpen, onClose }) {
               <div style={{ fontSize: 9, color: C.accent, letterSpacing: 3, textTransform: "uppercase", marginTop: 2, opacity: 0.85 }}>Trading Journal</div>
             </div>
           </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 4, flexShrink: 0 }}>
-            {state.ritual?.enabled !== false && (
-              <button
-                onClick={() => dispatch({ type: "OPEN_MODAL", modal: "ritual" })}
-                title="Pre-session ritual"
-                style={{ position: "relative", background: "none", border: "none", color: C.textMuted, fontSize: 17, cursor: "pointer", padding: "4px 6px", lineHeight: 1 }}
-              >
-                🧘
-                {ritualDue && <span style={{ position: "absolute", top: 2, right: 3, width: 8, height: 8, borderRadius: "50%", background: C.red, border: `1.5px solid ${C.sidebar}` }} />}
-              </button>
-            )}
-            <button onClick={onClose} className="sidebar-close-btn" style={{ background: "none", border: "none", color: C.textMuted, fontSize: 22, cursor: "pointer", display: "none" }}>×</button>
-          </div>
+          <button onClick={onClose} className="sidebar-close-btn" style={{ background: "none", border: "none", color: C.textMuted, fontSize: 22, cursor: "pointer", display: "none" }}>×</button>
         </div>
       <div style={{ padding: "10px 8px", flex: 1, overflowY: "auto" }}>
         <div style={{ fontSize: 9, color: C.textDim, fontWeight: 700, letterSpacing: 1.5, textTransform: "uppercase", padding: "4px 8px 6px" }}>Menu</div>
-        {NAV.map(n => (
+        {navItems.map(n => (
           <div key={n.id} onClick={() => { setPage(n.id); onClose && onClose(); }} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 10px", borderRadius: 8, cursor: "pointer", marginBottom: 1, transition: "all 0.1s", background: page === n.id ? C.accentDim : "transparent", color: page === n.id ? C.accent : C.textMuted, fontWeight: page === n.id ? 600 : 400, fontSize: 14 }}>
             <span style={{ fontSize: 14, width: 18, textAlign: "center" }}>{n.icon}</span>
             <span style={{ flex: 1 }}>{n.label}</span>
+            {n.id === "preparation" && ritualDue && <span style={{ width: 8, height: 8, borderRadius: "50%", background: C.red, flexShrink: 0 }} />}
             {n.plus && !isPlus(state) && <PlusBadge small />}
           </div>
         ))}
@@ -8358,13 +8379,13 @@ function Settings({ state, dispatch }) {
           {state.ritual?.enabled !== false && <Badge>ON</Badge>}
         </div>
         <div style={{ fontSize: 12, color: C.textDim, marginBottom: 14, lineHeight: 1.6 }}>
-          A short Arrive → Breathe → Your Lean → Commit check-in, available anytime from the 🧘 icon in the sidebar header. It shows a small red dot once a new main session (Asian, London, New York) starts, as a reminder — it never blocks you from opening the journal.
+          A short Arrive → Breathe → Your Lean → Commit check-in, available anytime from the "Preparation" page in the sidebar menu. It shows a small red dot once a new main session (Asian, London, New York) starts, as a reminder — it never blocks you from opening the journal, and you can run it as many times as you like.
         </div>
         <div onClick={() => dispatch({ type: "SET_RITUAL_ENABLED", enabled: !(state.ritual?.enabled !== false) })} style={{ display: "flex", alignItems: "center", gap: 12, background: state.ritual?.enabled !== false ? C.accentDim : C.bg, border: `1px solid ${state.ritual?.enabled !== false ? C.accent + "44" : C.border}`, borderRadius: 10, padding: 14, cursor: "pointer" }}>
           <div style={{ width: 38, height: 22, borderRadius: 12, background: state.ritual?.enabled !== false ? C.accent : C.border, position: "relative", flexShrink: 0, transition: "background 0.15s" }}>
             <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: state.ritual?.enabled !== false ? 19 : 3, transition: "left 0.15s" }} />
           </div>
-          <div><div style={{ fontSize: 13, fontWeight: 700 }}>Show ritual icon in sidebar</div><div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>Turn off to hide the 🧘 icon and reminder dot entirely.</div></div>
+          <div><div style={{ fontSize: 13, fontWeight: 700 }}>Show Preparation page</div><div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>Turn off to hide it from the sidebar menu entirely.</div></div>
         </div>
       </Card>
 
@@ -8791,6 +8812,7 @@ export default function App() {
   const pages = {
     dashboard: <Dashboard state={state} dispatch={dispatch} setPage={setPage} />,
     journal: <Journal state={state} dispatch={dispatch} setPage={setPage} />,
+    preparation: <PreparationPage state={state} dispatch={dispatch} />,
     import: isPlus(state) ? <ImportTrades state={state} dispatch={dispatch} setPage={setPage} /> : <UpgradeGate title="Bulk import is an AcePlus feature" desc="Import trades from any broker/CSV in bulk once you upgrade to AcePlus." dispatch={dispatch} />,
     mynotes: gatedPage("mynotes", <MyNotes state={state} dispatch={dispatch} />, "My Notes is an AcePlus feature", "Unlock daily journaling — Graces & Goals, Quick Notes, Advanced Self Review, Mentor Notes, and Past Entries."),
     strategies: <Strategies state={state} dispatch={dispatch} />,
@@ -8838,7 +8860,6 @@ export default function App() {
             </div>
           </div>
           {modalType === "welcome" && <WelcomeModal state={state} dispatch={dispatch} />}
-          {modalType === "ritual" && <SessionRitual state={state} dispatch={dispatch} onDone={() => dispatch({ type: "CLOSE_MODAL" })} onClose={() => dispatch({ type: "CLOSE_MODAL" })} />}
           {modalType === "add_trade" && <AddTradeModal state={state} dispatch={dispatch} />}
           {modalType === "upgrade" && <UpgradeModal state={state} dispatch={dispatch} />}
           {modalType === "playbook_detail" && (() => {
