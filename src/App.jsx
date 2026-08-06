@@ -3655,7 +3655,7 @@ function Journal({ state, dispatch, setPage }) {
                       {td(<b>{t.symbol}</b>)}
                       {td(<Badge color={t.direction === "Long" ? C.accent : C.red}>{t.direction === "Long" ? "♤ LONG" : "♤ SHORT"}</Badge>)}
                       {td(t.setup ? <Badge color={strat?.color || hashColor(t.setup)}>{t.setup}</Badge> : "—")}
-                      {td(t.timeframe ? <Badge color={hashColor(t.timeframe)}>{t.timeframe}</Badge> : "—")}
+                      {td(t.timeframe ? <Badge color={timeframeColor(t.timeframe)}>{t.timeframe}</Badge> : "—")}
                       {td(t.session ? <Badge color={hashColor(t.session)}>{t.session}</Badge> : "—")}
                       {td(t.risk ? <Badge color={riskColor(t.risk)}>{t.risk}</Badge> : "—")}
                       {td(t.mood ? <Badge color={moodColor(t.mood)}>{t.mood}</Badge> : "—")}
