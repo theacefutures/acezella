@@ -1099,8 +1099,8 @@ function AuthScreen({ state, dispatch }) {
     <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
       <div style={{ width: "100%", maxWidth: 440 }} className="fade-in">
         <div style={{ textAlign: "center", marginBottom: 36 }}>
-          <img src={logoUrl} alt="" style={{ width: 64, height: 64, borderRadius: 16, marginBottom: 14, objectFit: "cover" }} />
-          <div style={{ fontSize: 44, fontWeight: 800, letterSpacing: -2, fontFamily: "'Inter', sans-serif", ...gradientTextStyle() }}>{state.siteName || "THE ACE LOUNGE"}</div>
+          <img src={logoUrl} alt="" style={{ width: 88, height: 88, borderRadius: 20, marginBottom: 14, objectFit: "cover" }} />
+          <div style={{ fontSize: 30, fontWeight: 800, letterSpacing: -1, fontFamily: "'Inter', sans-serif", ...gradientTextStyle() }}>{state.siteName || "THE ACE LOUNGE"}</div>
           <div style={{ fontSize: 11, color: C.textMuted, letterSpacing: 4, textTransform: "uppercase", marginTop: 4 }}>Trading Journal</div>
         </div>
         <Card style={{ padding: 32 }}>
@@ -1366,9 +1366,9 @@ function Sidebar({ page, setPage, state, dispatch, mobileNavOpen, onClose }) {
       <div className={`app-sidebar${mobileNavOpen ? " open" : ""}`} style={{ width: 224, minWidth: 224, background: C.sidebar, borderRight: `1px solid ${C.border}`, display: "flex", flexDirection: "column", height: "100%" }}>
         <div style={{ padding: "18px 16px 12px", borderBottom: `1px solid ${C.border}`, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0 }}>
-            <img src={logoUrl} alt="" style={{ width: 34, height: 34, borderRadius: 9, flexShrink: 0, objectFit: "cover" }} />
+            <img src={logoUrl} alt="" style={{ width: 46, height: 46, borderRadius: 12, flexShrink: 0, objectFit: "cover" }} />
             <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 19, fontWeight: 800, fontFamily: "'Inter', sans-serif", letterSpacing: -1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", ...gradientTextStyle() }}>{state.siteName || "THE ACE LOUNGE"}</div>
+              <div style={{ fontSize: 15, fontWeight: 800, fontFamily: "'Inter', sans-serif", letterSpacing: -0.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", ...gradientTextStyle() }}>{state.siteName || "THE ACE LOUNGE"}</div>
               <div style={{ fontSize: 9, color: C.accent, letterSpacing: 3, textTransform: "uppercase", marginTop: 2, opacity: 0.85 }}>Trading Journal</div>
             </div>
           </div>
