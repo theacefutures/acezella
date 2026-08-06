@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import React, { useState, useCallback, useRef, useEffect, useMemo } from "react";
 import { supabase } from "./supabaseClient";
 import { loadCloudState, saveCloudState, flushCloudStateSync, getLocalCache, getSnapshots, hasRealData, onSyncStatusChange } from "./lib/cloudSync";
 import logoUrl from "./logo.png";
@@ -102,6 +102,9 @@ function buildGlobalCSS() {
   @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes spadeBounce{0%,80%,100%{transform:translateY(0) scale(1);opacity:0.45}40%{transform:translateY(-12px) scale(1.15);opacity:1}}
   .fade-in{animation:fadeIn 0.2s ease forwards}
+  @keyframes ritualBreathe{0%{transform:scale(0.72)}40%{transform:scale(1)}60%{transform:scale(1)}100%{transform:scale(0.72)}}
+  @keyframes ritualPulse{0%,100%{box-shadow:0 0 0 0 ${C.accent}33}50%{box-shadow:0 0 0 18px ${C.accent}00}}
+  .ritual-breathe-ring{animation:ritualBreathe 10s ease-in-out infinite, ritualPulse 10s ease-in-out infinite}
 
   /* ── Responsive: mobile topbar + sidebar drawer ───────────────────────── */
   .mobile-topbar{display:none}
@@ -584,13 +587,18 @@ function defaultState() {
       { id: "fp6", firmId: "pf1", gross: 1800, splitPct: 80, date: "2026-01-28", certificateUrl: "", notes: "January payout - best month yet" },
     ],
     siteName: "THE ACE LOUNGE",
+    // Pre-session ritual: a short Arrive / Breathe / Your Lean / Commit flow
+    // shown once per main session (Asian / London / New York) per day,
+    // before the person can reach the rest of the journal.
+    ritual: { enabled: true },
+    ritualLog: {}, // { "2026-08-06_London": { intention, skipped, completedAt } }
     pnlDisplayMode: "money", // "money" | "percent" — global $ / % toggle for trade-level P&L displays
     plan: "free", // "free" (Ace Basic) | "plus" (AcePlus $10/mo)
     theme: { name: "Original", mode: "night" },
     themeSchemaVersion: THEME_SCHEMA_VERSION,
     uiTransparency: 90,
     popupTransparency: 0,
-    watermark: { dataUrl: null, opacity: 20 },
+    watermark: { mode: "spade", dataUrl: null, opacity: 20 }, // mode: "spade" | "logo" | "custom"
     privacy: { enabled: false, blurOnBlur: true, disableRightClick: true, disableCopy: true, watermarkOverlay: true, blockPrint: true },
     liveCapital: {
       startingCapital: 25000,
@@ -691,7 +699,7 @@ function initState() {
       referenceListsSchemaVersion: REFERENCE_LISTS_SCHEMA_VERSION,
       accounts: needsAccountMigration ? defaults.accounts : (s.accounts && s.accounts.length ? s.accounts : defaults.accounts),
       accountsSchemaVersion: ACCOUNTS_SCHEMA_VERSION,
-      watermark: { ...defaults.watermark, ...s.watermark },
+      watermark: { ...defaults.watermark, ...s.watermark, mode: s.watermark?.mode || (s.watermark?.dataUrl ? "custom" : "spade") },
       privacy: { ...defaults.privacy, ...s.privacy },
       propFirms: s.propFirms && s.propFirms.length ? s.propFirms : defaults.propFirms,
       liveCapital: { ...defaults.liveCapital, ...s.liveCapital, contribution: { ...defaults.liveCapital.contribution, ...s.liveCapital?.contribution }, withdrawal: { ...defaults.liveCapital.withdrawal, ...s.liveCapital?.withdrawal } },
@@ -756,6 +764,8 @@ function reducer(state, action) {
     case "SET_TRANSPARENCY": next = { ...state, uiTransparency: action.value }; break;
     case "SET_POPUP_TRANSPARENCY": next = { ...state, popupTransparency: action.value }; break;
     case "SET_SITE_NAME": next = { ...state, siteName: action.name }; break;
+    case "SET_RITUAL_ENABLED": next = { ...state, ritual: { ...state.ritual, enabled: action.enabled } }; break;
+    case "COMPLETE_RITUAL": next = { ...state, ritualLog: { ...state.ritualLog, [action.key]: { intention: action.intention || "", skipped: !!action.skipped, completedAt: new Date().toISOString() } } }; break;
     case "SET_PNL_DISPLAY_MODE": next = { ...state, pnlDisplayMode: action.mode }; break;
     case "SET_PLAN": next = { ...state, plan: action.plan, modal: null }; break;
     case "SET_WATERMARK": next = { ...state, watermark: { ...state.watermark, ...action.watermark } }; break;
@@ -1150,6 +1160,162 @@ function AuthScreen({ state, dispatch }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── PRE-SESSION RITUAL (Arrive · Breathe · Your Lean · Commit) ────────────
+// Shown once per main session (Asian / London / New York) per calendar day,
+// before the person reaches the rest of the journal. Independent of the
+// finer 9-band TRADING_SESSIONS used for trade tagging below — this only
+// needs the three sessions the person actually asked to gate.
+function mainSessionFor(date) {
+  const h = date.getUTCHours();
+  if (h >= 0 && h < 7) return "Asian";
+  if (h >= 7 && h < 13) return "London";
+  return "New York"; // 13:00–23:59 UTC
+}
+function ritualKeyFor(date) {
+  return `${date.toISOString().slice(0, 10)}_${mainSessionFor(date)}`;
+}
+// Small self-contained countdown. Calls onDone once, when it hits zero.
+function useRitualCountdown(seconds, active, onDone) {
+  const [remaining, setRemaining] = useState(seconds);
+  const doneRef = useRef(false);
+  useEffect(() => { setRemaining(seconds); doneRef.current = false; }, [seconds, active]);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => {
+      setRemaining(r => {
+        if (r <= 1) {
+          clearInterval(id);
+          if (!doneRef.current) { doneRef.current = true; onDone && onDone(); }
+          return 0;
+        }
+        return r - 1;
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [active]);
+  const m = Math.floor(remaining / 60), s = remaining % 60;
+  return `${m}:${String(s).padStart(2, "0")}`;
+}
+const RITUAL_STEPS = ["ARRIVE", "BREATHE", "YOUR LEAN", "COMMIT"];
+function RitualTabs({ step }) {
+  return (
+    <div style={{ display: "flex", gap: 22, justifyContent: "center", marginBottom: 46, flexWrap: "wrap" }}>
+      {RITUAL_STEPS.map((s, i) => (
+        <div key={s} style={{
+          fontSize: 11, fontWeight: 700, letterSpacing: 2, padding: "6px 4px",
+          color: i === step ? C.accent : i < step ? C.textMuted : C.textDim,
+          borderBottom: i === step ? `2px solid ${C.accent}` : "2px solid transparent",
+        }}>{s}</div>
+      ))}
+    </div>
+  );
+}
+function RitualSkip({ onClick, children = "Skip this step" }) {
+  return <div onClick={onClick} style={{ marginTop: 22, fontSize: 12, color: C.textDim, cursor: "pointer", textDecoration: "underline" }}>{children}</div>;
+}
+// Derives a one-line, data-grounded nudge from the person's own recent
+// trades — mirrors the "this came from your own journal" framing.
+function ritualInsight(state) {
+  const trades = state.trades || [];
+  if (!trades.length) return { headline: "Fewer, better trades", detail: "No history yet to lean on — so make today's log the first data point." };
+  const byDay = {};
+  trades.forEach(t => { const d = (t.date || "").slice(0, 10); if (!d) return; byDay[d] = (byDay[d] || 0) + 1; });
+  const counts = Object.values(byDay);
+  const avg = counts.reduce((a, b) => a + b, 0) / (counts.length || 1);
+  const overtradeDays = counts.filter(c => c > avg * 2).length;
+  const recent = trades.slice(0, 10);
+  const losses = recent.filter(t => t.outcome === "Loss").length;
+  if (overtradeDays > 0 && avg > 0) {
+    return { headline: "Fewer, better trades", detail: `You had ${overtradeDays} day(s) with more than double your usual trade count.` };
+  }
+  if (recent.length >= 4 && losses / recent.length >= 0.6) {
+    return { headline: "Protect the downside today", detail: "Your last few trades lean loss-heavy — size down until the edge shows up again." };
+  }
+  return { headline: "Trade what's in front of you", detail: "Not what you wish was there. Wait for your setup." };
+}
+function SessionRitual({ state, dispatch, onDone }) {
+  const [step, setStep] = useState(0);
+  const insight = useMemo(() => ritualInsight(state), []);
+  const [intention, setIntention] = useState(insight.headline);
+  const [agreed, setAgreed] = useState(false);
+  const session = mainSessionFor(new Date());
+
+  const finish = (skipped = false) => {
+    dispatch({ type: "COMPLETE_RITUAL", key: ritualKeyFor(new Date()), intention, skipped });
+    onDone();
+  };
+
+  const arriveTime = useRitualCountdown(60, step === 0, () => setStep(1));
+  const breatheTime = useRitualCountdown(180, step === 1, () => setStep(2));
+
+  return (
+    <div style={{ minHeight: "100vh", background: C.bg, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
+      <div className="fade-in" style={{ width: "100%", maxWidth: 520, textAlign: "center" }} key={step}>
+        <RitualTabs step={step} />
+
+        {step === 0 && (
+          <>
+            <div style={{ width: 96, height: 96, borderRadius: "50%", background: C.surfaceHigh, margin: "0 auto 30px" }} />
+            <div style={{ fontSize: 30, fontWeight: 800, marginBottom: 14 }}>Put the phone down.</div>
+            <div style={{ fontSize: 14, color: C.textMuted, lineHeight: 1.7, maxWidth: 400, margin: "0 auto" }}>
+              Both feet on the floor. Nothing to do for the next minute except be here.
+              The {session} session opens whether you are ready or not — this is how you get ready.
+            </div>
+            <div style={{ fontSize: 13, color: C.textDim, marginTop: 26, fontVariantNumeric: "tabular-nums" }}>{arriveTime}</div>
+            <RitualSkip onClick={() => setStep(1)} />
+          </>
+        )}
+
+        {step === 1 && (
+          <>
+            <div className="ritual-breathe-ring" style={{ width: 110, height: 110, borderRadius: "50%", background: `radial-gradient(circle, ${C.accentDim}, ${C.accent}22)`, border: `2px solid ${C.accent}`, margin: "0 auto 30px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: C.accent }}>
+              Breathe
+            </div>
+            <div style={{ fontSize: 30, fontWeight: 800, marginBottom: 14 }}>Four in, hold, six out.</div>
+            <div style={{ fontSize: 14, color: C.textMuted, lineHeight: 1.7, maxWidth: 400, margin: "0 auto" }}>
+              Follow the circle. Longer out-breath than in-breath, because that is what settles the nervous system.
+              If your mind wanders to a chart, that's fine — come back to the circle.
+            </div>
+            <div style={{ fontSize: 13, color: C.textDim, marginTop: 26, fontVariantNumeric: "tabular-nums" }}>{breatheTime}</div>
+            <RitualSkip onClick={() => setStep(2)} />
+          </>
+        )}
+
+        {step === 2 && (
+          <>
+            <div style={{ fontSize: 11, color: C.accent, fontWeight: 700, letterSpacing: 2, marginBottom: 10 }}>TODAY'S INTENTION</div>
+            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 10 }}>{insight.headline}</div>
+            <div style={{ fontSize: 13, color: C.textMuted, marginBottom: 6, lineHeight: 1.6 }}>{insight.detail}</div>
+            <div style={{ fontSize: 11, color: C.textDim, marginBottom: 22 }}>This came from your own journal — not us.</div>
+            <textarea
+              value={intention}
+              onChange={e => setIntention(e.target.value)}
+              rows={2}
+              style={{ width: "100%", resize: "none", background: C.surface, border: `1px solid ${C.accent}66`, borderRadius: 10, color: C.text, padding: "14px 16px", fontSize: 15, fontWeight: 600, textAlign: "center", outline: "none" }}
+            />
+            <Btn onClick={() => setStep(3)} style={{ marginTop: 22, width: "100%", justifyContent: "center" }}>I've got it</Btn>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <div style={{ fontSize: 11, color: C.accent, fontWeight: 700, letterSpacing: 2, marginBottom: 10 }}>BEFORE YOU OPEN THE PLATFORM</div>
+            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 20 }}>Say it back.</div>
+            <div style={{ background: C.surface, border: `1px solid ${C.accent}66`, borderRadius: 12, padding: "16px 18px", fontSize: 15, fontWeight: 700, color: C.accent }}>
+              {intention || "I will trade my plan today."}
+            </div>
+            <label style={{ display: "flex", alignItems: "center", gap: 10, justifyContent: "center", marginTop: 20, fontSize: 13, color: C.textMuted, cursor: "pointer" }}>
+              <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)} style={{ width: 16, height: 16, accentColor: C.accent, cursor: "pointer" }} />
+              I'm trading my plan today
+            </label>
+            <Btn onClick={() => finish(false)} disabled={!agreed} style={{ marginTop: 22, width: "100%", justifyContent: "center" }}>Start the session</Btn>
+          </>
+        )}
+      </div>
     </div>
   );
 }
@@ -7761,7 +7927,7 @@ function Settings({ state, dispatch }) {
     if (!file) return;
     if (!isPlus(state)) { dispatch({ type: "OPEN_MODAL", modal: "upgrade" }); return; }
     const reader = new FileReader();
-    reader.onload = e => dispatch({ type: "SET_WATERMARK", watermark: { dataUrl: e.target.result } });
+    reader.onload = e => dispatch({ type: "SET_WATERMARK", watermark: { dataUrl: e.target.result, mode: "custom" } });
     reader.readAsDataURL(file);
   };
 
@@ -8019,10 +8185,22 @@ function Settings({ state, dispatch }) {
 
       <Card>
         <SectionLabel>Background Watermark</SectionLabel>
-        <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 12 }}>Defaults to the ♤ spade mark. Upload a logo or image to use a subtle background watermark instead.</div>
+        <div style={{ fontSize: 12, color: C.textMuted, marginBottom: 12 }}>Pick the ♤ spade mark or your logo as the default watermark, or upload a custom image instead.</div>
+        <div style={{ display: "flex", gap: 10, marginBottom: 12, maxWidth: 460, flexWrap: "wrap" }}>
+          {[{ key: "spade", label: "♤ Spade" }, { key: "logo", label: "🖼 Logo" }].map(opt => {
+            const activeMode = state.watermark?.mode || (state.watermark?.dataUrl ? "custom" : "spade");
+            const active = activeMode === opt.key;
+            return (
+              <div key={opt.key} onClick={() => dispatch({ type: "SET_WATERMARK", watermark: { mode: opt.key } })}
+                style={{ flex: 1, minWidth: 120, textAlign: "center", padding: "10px 12px", borderRadius: 10, cursor: "pointer", fontSize: 13, fontWeight: 700, border: `1px solid ${active ? C.accent : C.border}`, background: active ? C.accentDim : C.bg, color: active ? C.accent : C.textMuted }}>
+                {opt.label}
+              </div>
+            );
+          })}
+        </div>
         <div style={{ display: "flex", gap: 10, marginBottom: 14, maxWidth: 460 }}>
-          <Btn variant="ghost" onClick={() => isPlus(state) ? watermarkRef.current?.click() : dispatch({ type: "OPEN_MODAL", modal: "upgrade" })} style={{ flex: 1, justifyContent: "center" }}>Upload image {!isPlus(state) && <PlusBadge small />}</Btn>
-          <Btn variant="danger" onClick={() => dispatch({ type: "SET_WATERMARK", watermark: { dataUrl: null } })}>Remove</Btn>
+          <Btn variant="ghost" onClick={() => isPlus(state) ? watermarkRef.current?.click() : dispatch({ type: "OPEN_MODAL", modal: "upgrade" })} style={{ flex: 1, justifyContent: "center" }}>Upload custom image {!isPlus(state) && <PlusBadge small />}</Btn>
+          {(state.watermark?.mode === "custom" || (!state.watermark?.mode && state.watermark?.dataUrl)) && <Btn variant="danger" onClick={() => dispatch({ type: "SET_WATERMARK", watermark: { dataUrl: null, mode: "spade" } })}>Remove</Btn>}
         </div>
         <input ref={watermarkRef} type="file" accept="image/*" style={{ display: "none" }} onChange={e => handleWatermarkUpload(e.target.files[0])} />
         <div style={{ display: "flex", alignItems: "center", gap: 12, maxWidth: 460 }}>
@@ -8030,13 +8208,17 @@ function Settings({ state, dispatch }) {
           <input type="range" min="2" max="40" value={state.watermark?.opacity ?? 20} onChange={e => dispatch({ type: "SET_WATERMARK", watermark: { opacity: parseInt(e.target.value) } })} style={{ flex: 1 }} />
           <span style={{ fontSize: 12, color: C.textMuted, minWidth: 32, textAlign: "right" }}>{state.watermark?.opacity ?? 20}%</span>
         </div>
-        {state.watermark?.dataUrl ? (
-          <div style={{ marginTop: 14, width: 140, height: 90, borderRadius: 8, border: `1px solid ${C.border}`, backgroundImage: `url(${state.watermark.dataUrl})`, backgroundSize: "contain", backgroundPosition: "center", backgroundRepeat: "no-repeat", backgroundColor: C.bg }} />
-        ) : (
-          <div style={{ marginTop: 14, width: 140, height: 90, borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
-            <span style={{ fontSize: 40, color: C.accent, lineHeight: 1 }}>♤</span>
-          </div>
-        )}
+        {(() => {
+          const activeMode = state.watermark?.mode || (state.watermark?.dataUrl ? "custom" : "spade");
+          const previewSrc = activeMode === "logo" ? logoUrl : activeMode === "custom" ? state.watermark?.dataUrl : null;
+          return previewSrc ? (
+            <div style={{ marginTop: 14, width: 140, height: 90, borderRadius: 8, border: `1px solid ${C.border}`, backgroundImage: `url(${previewSrc})`, backgroundSize: "contain", backgroundPosition: "center", backgroundRepeat: "no-repeat", backgroundColor: C.bg }} />
+          ) : (
+            <div style={{ marginTop: 14, width: 140, height: 90, borderRadius: 8, border: `1px solid ${C.border}`, background: C.bg, display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <span style={{ fontSize: 40, color: C.accent, lineHeight: 1 }}>♤</span>
+            </div>
+          );
+        })()}
       </Card>
 
       <Card>
@@ -8099,6 +8281,23 @@ function Settings({ state, dispatch }) {
             })}
           </div>
         )}
+      </Card>
+
+      {/* Pre-Session Ritual */}
+      <Card>
+        <div style={{ display: "flex", alignItems: "center", marginBottom: 4, gap: 10 }}>
+          <div style={{ flex: 1 }}><SectionLabel>🧘 Pre-Session Ritual</SectionLabel></div>
+          {state.ritual?.enabled !== false && <Badge>ON</Badge>}
+        </div>
+        <div style={{ fontSize: 12, color: C.textDim, marginBottom: 14, lineHeight: 1.6 }}>
+          A short Arrive → Breathe → Your Lean → Commit check-in before each new main session (Asian, London, New York) — once per session, per day.
+        </div>
+        <div onClick={() => dispatch({ type: "SET_RITUAL_ENABLED", enabled: !(state.ritual?.enabled !== false) })} style={{ display: "flex", alignItems: "center", gap: 12, background: state.ritual?.enabled !== false ? C.accentDim : C.bg, border: `1px solid ${state.ritual?.enabled !== false ? C.accent + "44" : C.border}`, borderRadius: 10, padding: 14, cursor: "pointer" }}>
+          <div style={{ width: 38, height: 22, borderRadius: 12, background: state.ritual?.enabled !== false ? C.accent : C.border, position: "relative", flexShrink: 0, transition: "background 0.15s" }}>
+            <div style={{ width: 16, height: 16, borderRadius: "50%", background: "#fff", position: "absolute", top: 3, left: state.ritual?.enabled !== false ? 19 : 3, transition: "left 0.15s" }} />
+          </div>
+          <div><div style={{ fontSize: 13, fontWeight: 700 }}>Show ritual before each session</div><div style={{ fontSize: 11, color: C.textDim, marginTop: 2 }}>Turn off to open straight into the journal every time.</div></div>
+        </div>
       </Card>
 
       {/* Sessions */}
@@ -8516,6 +8715,18 @@ export default function App() {
     </>
   );
 
+  // ── Pre-session ritual gate ────────────────────────────────────────────
+  // Blocks the rest of the app once per main session (Asian/London/New York)
+  // per calendar day, unless the person has turned it off in Settings.
+  const ritualKey = ritualKeyFor(new Date());
+  const ritualDue = state.ritual?.enabled !== false && !state.ritualLog?.[ritualKey];
+  if (ritualDue) return (
+    <>
+      <style>{buildGlobalCSS()}</style>
+      <SessionRitual state={state} dispatch={dispatch} onDone={() => {}} />
+    </>
+  );
+
   const modalType = typeof state.modal === "string" ? state.modal : state.modal?.type;
 
   const gatedPage = (id, node, gateTitle, gateDesc) =>
@@ -8537,13 +8748,15 @@ export default function App() {
 
   const watermark = state.watermark;
   const currentNav = NAV.find(n => n.id === page) || (page === "import" ? { icon: "♤", label: "Import Trades" } : page === "settings" ? { icon: "♤", label: "Settings" } : null);
+  const watermarkMode = watermark?.mode || (watermark?.dataUrl ? "custom" : "spade");
+  const watermarkImgSrc = watermarkMode === "logo" ? logoUrl : watermarkMode === "custom" ? watermark?.dataUrl : null;
 
   return (
     <>
       <style>{buildGlobalCSS()}</style>
       <PrivacyGuard state={state} dispatch={dispatch}>
-      {watermark?.dataUrl ? (
-        <div style={{ position: "fixed", inset: 0, zIndex: 0, backgroundImage: `url(${watermark.dataUrl})`, backgroundSize: "contain", backgroundPosition: "center", backgroundRepeat: "no-repeat", opacity: (watermark.opacity ?? 20) / 100, pointerEvents: "none" }} />
+      {watermarkImgSrc ? (
+        <div style={{ position: "fixed", inset: 0, zIndex: 0, backgroundImage: `url(${watermarkImgSrc})`, backgroundSize: "contain", backgroundPosition: "center", backgroundRepeat: "no-repeat", opacity: (watermark.opacity ?? 20) / 100, pointerEvents: "none" }} />
       ) : (
         <div style={{ position: "fixed", inset: 0, zIndex: 0, display: "flex", alignItems: "center", justifyContent: "center", opacity: (watermark?.opacity ?? 20) / 100, pointerEvents: "none" }}>
           <span style={{ fontSize: "min(60vw, 60vh)", lineHeight: 1, color: C.accent }}>♤</span>
