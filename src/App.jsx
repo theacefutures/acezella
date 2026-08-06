@@ -102,9 +102,6 @@ function buildGlobalCSS() {
   @keyframes spin{to{transform:rotate(360deg)}}
   @keyframes spadeBounce{0%,80%,100%{transform:translateY(0) scale(1);opacity:0.45}40%{transform:translateY(-12px) scale(1.15);opacity:1}}
   .fade-in{animation:fadeIn 0.2s ease forwards}
-  @keyframes ritualBreathe{0%{transform:scale(0.72)}40%{transform:scale(1)}60%{transform:scale(1)}100%{transform:scale(0.72)}}
-  @keyframes ritualPulse{0%,100%{box-shadow:0 0 0 0 ${C.accent}33}50%{box-shadow:0 0 0 18px ${C.accent}00}}
-  .ritual-breathe-ring{animation:ritualBreathe 10s ease-in-out infinite, ritualPulse 10s ease-in-out infinite}
 
   /* ── Responsive: mobile topbar + sidebar drawer ───────────────────────── */
   .mobile-topbar{display:none}
@@ -1200,6 +1197,42 @@ function useRitualCountdown(seconds, active, onDone) {
   const m = Math.floor(remaining / 60), s = remaining % 60;
   return `${m}:${String(s).padStart(2, "0")}`;
 }
+// Box breathing: inhale, hold, exhale, hold — 4 seconds each. Cycles
+// continuously while active and reports which phase/second we're on so the
+// UI can show a live per-phase countdown, not just a single overall timer.
+const BOX_PHASES = [
+  { label: "Inhale", seconds: 4 },
+  { label: "Hold", seconds: 4 },
+  { label: "Exhale", seconds: 4 },
+  { label: "Hold", seconds: 4 },
+];
+const BOX_BREATH_CYCLES = 5;
+function useBoxBreathing(active, totalCycles, onDone) {
+  const [box, setBox] = useState({ phaseIdx: 0, remaining: BOX_PHASES[0].seconds, cycle: 1 });
+  const doneRef = useRef(false);
+  useEffect(() => {
+    setBox({ phaseIdx: 0, remaining: BOX_PHASES[0].seconds, cycle: 1 });
+    doneRef.current = false;
+  }, [active, totalCycles]);
+  useEffect(() => {
+    if (!active) return;
+    const id = setInterval(() => {
+      setBox(prev => {
+        if (prev.remaining > 1) return { ...prev, remaining: prev.remaining - 1 };
+        const nextPhaseIdx = (prev.phaseIdx + 1) % BOX_PHASES.length;
+        const wrapped = nextPhaseIdx === 0;
+        const nextCycle = wrapped ? prev.cycle + 1 : prev.cycle;
+        if (wrapped && nextCycle > totalCycles && !doneRef.current) {
+          doneRef.current = true;
+          onDone && onDone();
+        }
+        return { phaseIdx: nextPhaseIdx, remaining: BOX_PHASES[nextPhaseIdx].seconds, cycle: nextCycle };
+      });
+    }, 1000);
+    return () => clearInterval(id);
+  }, [active, totalCycles]);
+  return { phase: BOX_PHASES[box.phaseIdx], phaseIdx: box.phaseIdx, remaining: box.remaining, cycle: Math.min(box.cycle, totalCycles) };
+}
 const RITUAL_STEPS = ["ARRIVE", "BREATHE", "YOUR LEAN", "COMMIT"];
 function RitualTabs({ step }) {
   return (
@@ -1250,7 +1283,8 @@ function SessionRitual({ state, dispatch, onDone, onClose }) {
   };
 
   const arriveTime = useRitualCountdown(60, step === 0, () => setStep(1));
-  const breatheTime = useRitualCountdown(180, step === 1, () => setStep(2));
+  const breath = useBoxBreathing(step === 1, BOX_BREATH_CYCLES, () => setStep(2));
+  const breathScale = [1, 1, 0.62, 0.62][breath.phaseIdx];
 
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 200, background: `${C.bg}f2`, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }} onClick={onClose}>
@@ -1273,15 +1307,35 @@ function SessionRitual({ state, dispatch, onDone, onClose }) {
 
         {step === 1 && (
           <>
-            <div className="ritual-breathe-ring" style={{ width: 110, height: 110, borderRadius: "50%", background: `radial-gradient(circle, ${C.accentDim}, ${C.accent}22)`, border: `2px solid ${C.accent}`, margin: "0 auto 30px", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, color: C.accent }}>
-              Breathe
+            <div style={{ fontSize: 11, color: C.accent, fontWeight: 700, letterSpacing: 2, marginBottom: 18 }}>
+              BOX BREATHING · CYCLE {breath.cycle} OF {BOX_BREATH_CYCLES}
             </div>
-            <div style={{ fontSize: 30, fontWeight: 800, marginBottom: 14 }}>Four in, hold, six out.</div>
-            <div style={{ fontSize: 14, color: C.textMuted, lineHeight: 1.7, maxWidth: 400, margin: "0 auto" }}>
-              Follow the circle. Longer out-breath than in-breath, because that is what settles the nervous system.
-              If your mind wanders to a chart, that's fine — come back to the circle.
+            <div style={{ display: "flex", justifyContent: "center", gap: 8, marginBottom: 26, flexWrap: "wrap" }}>
+              {BOX_PHASES.map((p, i) => (
+                <div key={i} style={{
+                  padding: "5px 12px", borderRadius: 8, fontSize: 10, fontWeight: 700, letterSpacing: 1,
+                  background: i === breath.phaseIdx ? C.accentDim : "transparent",
+                  color: i === breath.phaseIdx ? C.accent : C.textDim,
+                  border: `1px solid ${i === breath.phaseIdx ? C.accent + "66" : C.border}`,
+                }}>{p.label.toUpperCase()}</div>
+              ))}
             </div>
-            <div style={{ fontSize: 13, color: C.textDim, marginTop: 26, fontVariantNumeric: "tabular-nums" }}>{breatheTime}</div>
+            <div style={{ width: 160, height: 160, margin: "0 auto 26px", display: "flex", alignItems: "center", justifyContent: "center" }}>
+              <div style={{
+                width: 130, height: 130, borderRadius: "50%",
+                background: `radial-gradient(circle, ${C.accentDim}, ${C.accent}22)`,
+                border: `2px solid ${C.accent}`,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                transform: `scale(${breathScale})`,
+                transition: `transform ${breath.phase.seconds}s linear`,
+              }}>
+                <div style={{ fontSize: 34, fontWeight: 800, color: C.accent, fontVariantNumeric: "tabular-nums" }}>{breath.remaining}</div>
+              </div>
+            </div>
+            <div style={{ fontSize: 26, fontWeight: 800, marginBottom: 14 }}>{breath.phase.label}</div>
+            <div style={{ fontSize: 14, color: C.textMuted, lineHeight: 1.7, maxWidth: 380, margin: "0 auto" }}>
+              Four seconds each way — inhale, hold, exhale, hold. If your mind wanders to a chart, that's fine — come back to the count.
+            </div>
             <RitualSkip onClick={() => setStep(2)} />
           </>
         )}
