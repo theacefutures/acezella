@@ -245,6 +245,31 @@ function PlanAnnouncementBanner() {
   );
 }
 
+// Shown across the top whenever the visitor is browsing the seeded demo
+// dataset (see the DEMO_LOGIN action) instead of a real signed-in account —
+// makes it obvious nothing here is being saved, and offers a one-click way
+// back to real sign in / sign up.
+function DemoModeBanner({ dispatch }) {
+  return (
+    <div style={{
+      flexShrink: 0, width: "100%", position: "relative", zIndex: 599,
+      background: C.accent2Dim, borderBottom: `1px solid ${C.accent2}44`,
+      color: C.text, padding: "9px 16px",
+      display: "flex", alignItems: "center", justifyContent: "center", gap: 12,
+      flexWrap: "wrap", textAlign: "center",
+    }}>
+      <span style={{ fontSize: 12.5, fontWeight: 700, color: C.accent2 }}>🧭 Demo Mode</span>
+      <span style={{ fontSize: 12.5, color: C.textMuted }}>You're exploring sample data — nothing here is saved.</span>
+      <button
+        onClick={async () => { await supabase.auth.signOut(); dispatch({ type: "LOGOUT" }); }}
+        style={{ background: C.accent2, border: "none", color: "#000", fontWeight: 700, fontSize: 12, borderRadius: 7, padding: "5px 12px", cursor: "pointer" }}
+      >
+        Exit Demo &amp; Sign Up
+      </button>
+    </div>
+  );
+}
+
 // Full-page paywall shown in place of a locked page's content.
 function UpgradeGate({ title, desc, dispatch }) {
   return (
@@ -709,15 +734,27 @@ function initState() {
 function reducer(state, action) {
   let next = state;
   switch (action.type) {
-    case "LOGIN": next = { ...state, currentUser: action.user, modal: "welcome" }; break;
-    case "LOGOUT": next = { ...state, currentUser: null }; break;
+    case "LOGIN": next = { ...state, currentUser: action.user, modal: "welcome", isDemo: false }; break;
+    case "LOGOUT": next = { ...state, currentUser: null, isDemo: false }; break;
+    // Lets a visitor explore the full app with a rich, pre-populated dataset
+    // without creating an account. isDemo:true tells the App shell to skip
+    // Supabase entirely (no cloud pull/push) so nothing here ever touches
+    // real backend data or a real user record.
+    case "DEMO_LOGIN": next = {
+      ...defaultState(),
+      trades: genDemoData(),
+      currentUser: { id: "demo-user", email: "demo@acezella.io", name: "Demo Trader" },
+      plan: "plus",
+      isDemo: true,
+      modal: null,
+    }; break;
     case "SET_USER_NAME": next = { ...state, currentUser: { ...state.currentUser, name: action.name } }; break;
     // Wipes every trade, account, note, strategy, prop firm, payout, and
     // capital transaction — resets to the same zero-state a brand-new
     // signup gets (see blankState()) — but keeps the person logged in on
     // their same user record rather than sending them back to auth.
-    case "CLEAR_ALL_DATA": next = { ...blankState(), currentUser: state.currentUser, modal: null }; break;
-    case "REGISTER": next = { ...blankState(), users: [...state.users, action.user], currentUser: action.user, modal: "welcome" }; break;
+    case "CLEAR_ALL_DATA": next = { ...blankState(), currentUser: state.currentUser, isDemo: state.isDemo, modal: null }; break;
+    case "REGISTER": next = { ...blankState(), users: [...state.users, action.user], currentUser: action.user, modal: "welcome", isDemo: false }; break;
     case "SET_ACTIVE_ACCOUNT": next = { ...state, activeAccount: action.id }; break;
     case "ADD_TRADE": next = { ...state, trades: [action.trade, ...state.trades] }; break;
     case "DELETE_TRADE": next = { ...state, trades: state.trades.filter(t => t.id !== action.id) }; break;
@@ -1128,6 +1165,20 @@ function AuthScreen({ state, dispatch }) {
           </div>
           <Btn variant="ghost" onClick={() => { if (mode === "login") { setShowSignupNotice(true); return; } setMode("login"); setError(""); }} style={{ width: "100%", justifyContent: "center" }}>{mode === "login" ? "Need an account? Sign up" : "Already have an account? Sign in"}</Btn>
         </Card>
+        <button
+          onClick={() => dispatch({ type: "DEMO_LOGIN" })}
+          style={{
+            width: "100%", marginTop: 14, background: "transparent",
+            border: `1px dashed ${C.borderLight}`, borderRadius: 12,
+            color: C.textMuted, fontSize: 13, fontWeight: 600,
+            padding: "13px 16px", cursor: "pointer", transition: "all 0.15s",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+          }}
+          onMouseEnter={e => { e.currentTarget.style.borderColor = C.accent; e.currentTarget.style.color = C.accent; }}
+          onMouseLeave={e => { e.currentTarget.style.borderColor = C.borderLight; e.currentTarget.style.color = C.textMuted; }}
+        >
+          🧭 Explore Website with Demo Data
+        </button>
         <div style={{ textAlign: "center", marginTop: 16, fontSize: 12, color: C.textDim }}>Contact To Sign Up: theacefutures@gmail.com </div>
       </div>
       {showSignupNotice && (
@@ -8664,7 +8715,9 @@ export default function App() {
   // save to Supabase failed) — so a change is never silently lost, but a
   // stale local copy can never overwrite a good cloud copy either.
   useEffect(() => {
-    if (!state.currentUser?.id) return;
+    // Demo sessions are entirely local — never pull/push against Supabase,
+    // and never let a stale demo currentUser.id trigger a real cloud fetch.
+    if (!state.currentUser?.id || state.isDemo) { if (state.isDemo) setCloudLoaded(true); return; }
     let cancelled = false;
     setCloudLoaded(false);
     setLoadError(null);
@@ -8705,11 +8758,11 @@ export default function App() {
       setCloudLoaded(true);
     });
     return () => { cancelled = true; };
-  }, [state.currentUser?.id, retryTick]);
+  }, [state.currentUser?.id, state.isDemo, retryTick]);
 
   // ── Push every change back up to Supabase (debounced + coalesced), once initial pull is done ──
   useEffect(() => {
-    if (state.currentUser?.id && cloudLoaded) {
+    if (state.currentUser?.id && cloudLoaded && !state.isDemo) {
       const allowEmpty = allowEmptySaveRef.current;
       allowEmptySaveRef.current = false;
       saveCloudState(state.currentUser.id, state, { allowEmpty });
@@ -8722,7 +8775,7 @@ export default function App() {
   // alive enough for a keepalive fetch to complete, unlike beforeunload
   // alone (which browsers may cut short).
   useEffect(() => {
-    if (!state.currentUser?.id) return;
+    if (!state.currentUser?.id || state.isDemo) return;
     const flush = () => flushCloudStateSync(state.currentUser.id, state);
     const onVis = () => { if (document.hidden) flush(); };
     document.addEventListener("visibilitychange", onVis);
@@ -8842,6 +8895,7 @@ export default function App() {
       )}
       <div style={{ display: "flex", flexDirection: "column", height: "100vh", position: "relative", zIndex: 1 }}>
         <PlanAnnouncementBanner />
+        {state.isDemo && <DemoModeBanner dispatch={dispatch} />}
         <TopHeader state={state} dispatch={dispatch} setPage={setPage} page={page} syncStatus={syncStatus} />
         <div className="app-shell" style={{ display: "flex", flex: 1, overflow: "hidden", minHeight: 0 }}>
           <Sidebar page={page} setPage={setPage} state={state} dispatch={dispatch} mobileNavOpen={mobileNavOpen} onClose={() => setMobileNavOpen(false)} />
